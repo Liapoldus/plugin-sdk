@@ -1,0 +1,265 @@
+{
+  "contractVersion": "liapoldus.plugin-sdk.http.v1",
+  "transportSecurity": {
+    "minimumTLSVersion": 772,
+    "clientCertificateRequired": true,
+    "trustDomain": "core-control-plane",
+    "peerIdentity": {
+      "commonNameRequired": true,
+      "commonNameMaximumLength": 256,
+      "uniformResourceIdentifierPrefix": "spiffe://liapoldus/core/",
+      "revocationFailClosed": true
+    }
+  },
+  "identity": {
+    "replica": {
+      "maximumBytes": 256,
+      "fields": ["instanceId", "replicaId"]
+    },
+    "registration": {
+      "mediaType": "application/json",
+      "maximumBytes": 4096,
+      "required": ["contractVersion", "instanceId", "replicaId", "appliedGeneration", "ready"]
+    }
+  },
+  "plugin": {
+    "responses": {
+      "health": { "status": 200, "body": { "status": "ok" } },
+      "contentTypes": {
+        "json": "application/json",
+        "metrics": "text/plain; version=0.0.4; charset=utf-8"
+      },
+      "metrics": {
+        "readyMetricName": "liapoldus_plugin_ready",
+        "readyMetricHelp": "Whether the plugin has an active configuration generation.",
+        "lifecycleCounterName": "liapoldus_plugin_lifecycle_total",
+        "lifecycleCounterHelp": "Count of plugin lifecycle operations by kind and bounded outcome.",
+        "lifecycleCounterKindLabel": "kind",
+        "lifecycleCounterOutcomeLabel": "outcome",
+        "pullFailureCounterName": "liapoldus_plugin_config_pull_failures_total",
+        "pullFailureCounterHelp": "Count of exact-generation configuration pull attempts that did not yield an applicable document."
+      }
+    },
+    "endpoints": {
+      "identity": { "method": "GET", "path": "/_liapoldus/v1/identity" },
+      "manifest": { "method": "GET", "path": "/_liapoldus/v1/manifest" },
+      "configSchema": { "method": "GET", "path": "/_liapoldus/v1/config-schema" },
+      "health": { "method": "GET", "path": "/_liapoldus/v1/health" },
+      "ready": { "method": "GET", "path": "/_liapoldus/v1/ready" },
+      "reload": { "method": "POST", "path": "/_liapoldus/v1/reload" },
+      "metrics": { "method": "GET", "path": "/_liapoldus/v1/metrics" }
+    },
+    "reloadRequest": {
+      "mediaType": "application/json",
+      "maximumBytes": 4096,
+      "required": ["generation", "sha256", "schemaVersion"]
+    },
+    "reloadAcknowledgement": {
+      "mediaType": "application/json",
+      "maximumBytes": 4096,
+      "required": ["generation", "sha256", "schemaVersion", "applied", "outcome"]
+    },
+    "readiness": {
+      "mediaType": "application/json",
+      "maximumBytes": 4096,
+      "required": ["ready", "generation", "sha256", "schemaVersion", "pendingGeneration", "instanceId", "replicaId"]
+    },
+    "manifest": {
+      "mediaType": "application/json",
+      "maximumBytes": 262144
+    },
+    "configurationSchema": {
+      "mediaType": "application/json",
+      "maximumBytes": 262144
+    },
+    "maximumMetadataBytes": 262144
+  },
+  "core": {
+    "configPull": {
+      "method": "GET",
+      "pathTemplate": "/internal/v1/plugin-config/{generation}",
+      "responseMediaType": "application/json",
+      "maximumBytes": 262144,
+      "requestMediaType": "application/json",
+      "generationStates": ["active", "previous"],
+      "responseHeaders": {
+        "generation": "Liapoldus-Generation",
+        "sha256": "Liapoldus-SHA256",
+        "schemaVersion": "Liapoldus-Schema-Version",
+        "generationState": "Liapoldus-Generation-State"
+      }
+    },
+    "secretGrant": {
+      "issue": {
+        "method": "POST",
+        "pathTemplate": "/internal/v1/plugin-secret-grants",
+        "requestMediaType": "application/json",
+        "responseMediaType": "application/json",
+        "maximumRequestBytes": 4096,
+        "maximumResponseBytes": 4096,
+        "required": ["reference", "purpose", "generation"]
+      },
+      "redemption": {
+        "method": "POST",
+        "pathTemplate": "/internal/v1/plugin-secret-grants/{handle}/redemption",
+        "requestMediaType": "application/json",
+        "responseMediaType": "application/json",
+        "maximumRequestBytes": 4096,
+        "maximumResponseBytes": 65536,
+        "required": ["handle"]
+      },
+      "handleMaximumLength": 512,
+      "referenceMaximumLength": 512,
+      "purposeMaximumLength": 128,
+      "redemptionUseLimit": 1
+    }
+  },
+  "outcomes": {
+    "reload": [
+      "applied",
+      "alreadyActive",
+      "invalidRequest",
+      "notPermitted",
+      "unknownGeneration",
+      "staleGeneration",
+      "generationConflict",
+      "digestMismatch",
+      "schemaVersionMismatch",
+      "documentMalformed",
+      "documentOversized",
+      "applyRejected",
+      "coreUnavailable",
+      "cancelled",
+      "deadlineExceeded"
+    ],
+    "configPull": [
+      "succeeded",
+      "notPermitted",
+      "unknownGeneration",
+      "staleGeneration",
+      "digestMismatch",
+      "schemaVersionMismatch",
+      "documentMalformed",
+      "documentOversized",
+      "coreUnavailable",
+      "cancelled",
+      "deadlineExceeded"
+    ],
+    "secretRedemption": [
+      "granted",
+      "notPermitted",
+      "grantUnknown",
+      "grantDenied",
+      "grantExpired",
+      "grantSpent",
+      "coreUnavailable",
+      "cancelled",
+      "deadlineExceeded"
+    ]
+  },
+  "problems": {
+    "notFound": { "status": 404, "code": "not_found" },
+    "methodNotAllowed": { "status": 405, "code": "method_not_allowed" },
+    "payloadOversized": { "status": 413, "code": "payload_oversized" },
+    "unsupportedMediaType": { "status": 415, "code": "unsupported_media_type" },
+    "internalError": { "status": 500, "code": "internal_error" }
+  },
+  "outcomeProblems": {
+    "invalidRequest": "invalidRequest",
+    "notPermitted": "notPermitted",
+    "unknownGeneration": "unknownGeneration",
+    "staleGeneration": "staleGeneration",
+    "generationConflict": "generationConflict",
+    "digestMismatch": "digestMismatch",
+    "schemaVersionMismatch": "schemaVersionMismatch",
+    "documentMalformed": "documentMalformed",
+    "documentOversized": "documentOversized",
+    "applyRejected": "applyRejected",
+    "coreUnavailable": "coreUnavailable",
+    "cancelled": "cancelled",
+    "deadlineExceeded": "deadlineExceeded",
+    "grantUnknown": "grantUnknown",
+    "grantDenied": "grantDenied",
+    "grantExpired": "grantExpired",
+    "grantSpent": "grantSpent"
+  },
+  "successOutcomes": ["applied", "alreadyActive", "succeeded", "granted"],
+  "errors": {
+    "invalidRequest": { "status": 400, "code": "invalid_request" },
+    "notPermitted": { "status": 403, "code": "not_permitted" },
+    "unknownGeneration": { "status": 404, "code": "generation_unknown" },
+    "staleGeneration": { "status": 409, "code": "generation_stale" },
+    "generationConflict": { "status": 409, "code": "generation_conflict" },
+    "notReady": { "status": 503, "code": "not_ready" },
+    "applyRejected": { "status": 422, "code": "configuration_rejected" },
+    "documentMalformed": { "status": 502, "code": "configuration_malformed" },
+    "documentOversized": { "status": 502, "code": "configuration_oversized" },
+    "digestMismatch": { "status": 502, "code": "digest_mismatch" },
+    "schemaVersionMismatch": { "status": 502, "code": "schema_version_mismatch" },
+    "coreUnavailable": { "status": 502, "code": "core_unavailable" },
+    "configurationUnavailable": { "status": 502, "code": "configuration_unavailable" },
+    "cancelled": { "status": 503, "code": "cancelled" },
+    "deadlineExceeded": { "status": 504, "code": "deadline_exceeded" },
+    "grantUnknown": { "status": 404, "code": "secret_grant_unknown" },
+    "grantDenied": { "status": 403, "code": "secret_grant_denied" },
+    "grantExpired": { "status": 403, "code": "secret_grant_expired" },
+    "grantSpent": { "status": 403, "code": "secret_grant_spent" }
+  },
+  "deadlines": {
+    "pluginReloadSeconds": 30,
+    "pluginReadinessSeconds": 5,
+    "coreConfigPullSeconds": 10,
+    "coreSecretGrantSeconds": 10,
+    "coreSecretRedemptionSeconds": 10,
+    "pluginReadHeaderSeconds": 5,
+    "pluginReadSeconds": 15,
+    "pluginWriteSeconds": 60,
+    "pluginIdleSeconds": 120,
+    "pluginShutdownGraceSeconds": 20,
+    "clientResponseHeaderSeconds": 10,
+    "clientDialSeconds": 10
+  },
+  "logging": {
+    "stream": "stdout",
+    "levels": ["debug", "info", "warn", "error"],
+    "defaultLevel": "info",
+    "maximumFields": 24,
+    "maximumKeyLength": 64,
+    "maximumValueLength": 256,
+    "redactedPlaceholder": "[redacted]",
+    "redactedKeys": [
+      "authorization",
+      "certificate",
+      "config",
+      "cookie",
+      "document",
+      "dsn",
+      "grant",
+      "handle",
+      "key",
+      "password",
+      "private",
+      "secret",
+      "settings",
+      "token",
+      "value"
+    ],
+    "alwaysRedactedKeys": [
+      "authorization",
+      "cookie",
+      "document",
+      "grant",
+      "handle",
+      "password",
+      "privatekey",
+      "secret",
+      "settings",
+      "token"
+    ]
+  },
+  "idempotency": {
+    "reloadKeyedBy": ["instanceId", "replicaId", "generation", "sha256", "schemaVersion"],
+    "repeatOfActiveGeneration": "alreadyActive",
+    "conflictingDescriptorForActiveGeneration": "generationConflict"
+  }
+}
