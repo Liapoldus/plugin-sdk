@@ -1,14 +1,23 @@
 # TODO — Plugin SDK v1
 
-Нормативная цель: [Core target](../liapoldus.github.io/core/architecture/target),
-[v1 acceptance](../liapoldus.github.io/core/configuration/acceptance) и
-[Core↔plugin REST boundary](../liapoldus.github.io/core/architecture/protocol).
+## Документация
+
+- [x] Общие Plugin SDK/lifecycle/Admin Surface Markdown и Mermaid исходники
+  принадлежат этому repo в `docs/site/`; агрегатор собирает закреплённую
+  ревизию, не поддерживая редактируемую копию.
+- [ ] После изменения owner docs обновить pin в
+  `liapoldus.github.io/docs-sources.json` и проверить единый сайт.
+
+Нормативная цель: [Core target](https://liapoldus.github.io/core/architecture/target),
+[v1 acceptance](https://liapoldus.github.io/core/configuration/acceptance) и
+[Core↔plugin REST boundary](https://liapoldus.github.io/core/architecture/protocol).
 Этот Go module — общий SDK для создания plugin services и единственный владелец
 Core↔plugin REST lifecycle contracts.
 
 `go.mod` использует временный local module path `liapoldus.local/plugin-sdk`.
-Canonical path и Git remote не назначены. Не угадывать, не публиковать и не
-переписывать imports до отдельного решения владельца.
+Git remote задан как `https://github.com/Liapoldus/plugin-sdk.git`; canonical
+Go module path остаётся временным до отдельного решения владельца. Не менять
+imports автоматически.
 
 Этот документ — reconciled status v1-среза: каждый исходный пункт помечен
 `[x]` только вместе с исполняемым доказательством, `⚠️` — реализовано, но
@@ -228,10 +237,9 @@ schema не копируются hardcode-строками по consumers.
   обе платформы нельзя. Заявление о platform coverage появится только вместе с
   исполняемым прогоном. В v1 binaries устанавливает и запускает оператор: SDK
   не управляет process lifecycle и не обращается к container API.
-- [ ] После решения владельца создать отдельный Git repository/remote и заменить
-  временный module path; затем мигрировать Core и plugin imports вместе. Сейчас
-  `plugin-sdk/` не является Git repository; canonical path, remote, release,
-  license и CI не согласованы. Не инициализировать/публиковать самовольно.
+- [ ] После решения владельца заменить временный module path и мигрировать Core
+  и plugin imports согласованно. Git repository/remote уже созданы; релиз,
+  license и CI остаются отдельными owner decisions.
 
 ## Definition of Done
 
@@ -249,7 +257,7 @@ plugin-side rollback, ровно один `Reload` use case, ровно один
 
 Открытые gates, которые не дают объявить SDK production-ready: P2.3
 (интеграция с Core, `plugins/server` и `plugins/forms-db` по их owner tasks),
-P2.4 (Linux-прогон) и P2.5 (решение владельца по module path/remote). P2.1
+P2.4 (Linux-прогон) и P2.5 (решение владельца по module path). P2.1
 закрыт: пять сценариев исполняются против живого процесса, и нетавтологичность
 каждой mTLS-проверки подтверждена подстановкой живого credential. Секретов в fixtures, логах, errors, metrics и ACK нет;
 временные credentials фикстуры — test-only и не являются credentials

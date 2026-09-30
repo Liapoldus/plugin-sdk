@@ -4,7 +4,7 @@
 Локальный SDK slice имеет зелёные unit/contract/security gates. Core уже содержит
 REST composition и per-replica clients, но активные Server и forms-db ещё не
 собираются против текущих SDK/protocol API; сквозная v1-интеграция не завершена.
-См. точный статус и remaining gates в [TODO.md](TODO.md).
+См. точный статус и remaining gates в [TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md).
 
 ## Единственный источник contract
 
@@ -185,7 +185,7 @@ key, DSN, grant handle и transport secrets не пишутся. `application.Ou
 его API нельзя публиковать, а release, license и CI не согласованы.
 
 Нормативная архитектура и migration plan находятся в
-[документации Core](../liapoldus.github.io/core/architecture/target).
+[документации Core](/core/architecture/target).
 
 ## Проверка
 
@@ -199,5 +199,5 @@ TypeScript conformance поднимает реальный mTLS child process, �
 listener'а (revoked, wrong-identity, expired), ротация credentials на диске с
 проверкой нового serial на проводе, reconnect и close race под нагрузкой, а
 также graceful shutdown с запросом in flight. Открытые gates перечислены в
-[TODO.md](TODO.md): интеграция с Core и продуктовыми plugins, Linux-прогон и
+[TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md): интеграция с Core и продуктовыми plugins, Linux-прогон и
 решение владельца по каноническому module path.

@@ -1,8 +1,13 @@
 # Plugin SDK agent instructions
 
 This directory is a standalone Go module for generic Core↔plugin REST lifecycle.
-Its module path is temporary (`liapoldus.local/plugin-sdk`); do not publish it,
-assign a canonical path, or invent a Git remote.
+Its module path is temporary (`liapoldus.local/plugin-sdk`); do not publish it
+or assign a canonical module path without owner approval. Its remote is
+`https://github.com/Liapoldus/plugin-sdk.git`.
+
+This repository owns the Plugin SDK documentation and diagrams under `docs/`
+plus the package README. The unified VitePress site imports a pinned source
+revision; edit the owner source, never a generated copy in the site aggregator.
 
 ## Architecture
 

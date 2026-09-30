@@ -1,0 +1,15 @@
+sequenceDiagram
+  participant C as Constructor UI
+  participant G as Core Admin API
+  participant P as Plugin instance
+  C->>G: GET admin/surface
+  G->>G: authorize instance + admin.surface.get
+  G->>P: capability admin.surface.get
+  P-->>G: declarative AdminSurface
+  G->>G: validate, cache digest, redact
+  G-->>C: schema + digest
+  C->>G: POST page query/action + digest
+  G->>G: permission, input validation, limit, audit
+  G->>P: declared capability + limited input
+  P-->>G: typed result/error
+  G-->>C: typed data or Problem Details
