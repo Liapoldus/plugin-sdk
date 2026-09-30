@@ -241,6 +241,23 @@ schema не копируются hardcode-строками по consumers.
   и plugin imports согласованно. Git repository/remote уже созданы; релиз,
   license и CI остаются отдельными owner decisions.
 
+## Отложено до v2: embedding и in-process adapter
+
+- [ ] Сохранить REST+mTLS adapter для plugin processes и добавить явно
+  выбираемый in-process adapter с теми же lifecycle models и observable
+  semantics; не вводить fallback.
+- [ ] Реализовать scoped in-memory `ConfigSource`, доступный только plugin
+  instance, чей immutable host binding его создал; не читать Core SQLite из
+  adapter и не выдавать staging generation.
+- [ ] Обеспечить Reload/pull/apply/ACK, digest/schema validation, grants,
+  cancellation и безопасные errors одинаково через оба adapter-а.
+- [ ] Закрепить, что in-process предназначен только доверенным статически
+  скомпонованным Go plugins: process isolation и Core↔plugin mTLS отсутствуют,
+  независимое обновление требует пересборки host binary.
+- [ ] Общий TypeScript conformance corpus пройти на REST child-process и
+  in-process adapters; добавить host-process smoke для listener absence,
+  instance scope, panic containment и graceful shutdown.
+
 ## Definition of Done
 
 Проверка 2026-09-30 на локальной macOS. `make check` проходит целиком: `npx vitest run`

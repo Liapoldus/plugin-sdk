@@ -75,3 +75,20 @@ Health/readiness не становится `Ready`, пока конкретна�
 актуальные config и peer-policy generations. Неизвестный результат plugin Call
 не повторяется автоматически; оборванный Stream закрывается. Публичная матрица
 runtime-доказательств — [Core acceptance](../core/configuration/acceptance).
+
+## Встраивание и единый бинарник в v2
+
+В v2 SDK предоставляет два явно выбираемых adapter-а одного lifecycle
+contract: REST+mTLS для отдельных процессов и in-process interface для
+статически скомпонованных доверенных Go plugins в процессе Core. In-process
+сохраняет `Reload` metadata, scoped exact-generation config source, digest
+validation, ACK и общую классификацию ошибок; он не передаёт raw settings в
+`Reload` и не открывает HTTP listener.
+
+Встроенные plugins составляют одну границу доверия и отказа с Core. SDK не
+обеспечивает process isolation или mTLS внутри процесса; panic containment не
+защищает от исчерпания ресурсов или аварии процесса. Поэтому in-process режим
+допустим только для доверенных compile-time modules. REST остаётся режимом для
+отдельных/удалённых процессов, без автоматического fallback. Каноническое
+решение и conformance gates описаны в
+[Core protocol architecture](https://liapoldus.github.io/core/architecture/protocol).
