@@ -8,7 +8,7 @@ describe("Plugin SDK layer structure", () => {
   it("contains only the four approved production layers", () => {
     const layerNames = readdirSync(projectRoot)
       .filter((name) => statSync(resolve(projectRoot, name)).isDirectory())
-      .filter((name) => ![".git", "docs", "tests", "contracts", "node_modules"].includes(name))
+      .filter((name) => ![".git", ".github", "docs", "tests", "contracts", "node_modules"].includes(name))
       .sort();
 
     expect(layerNames).toEqual([
