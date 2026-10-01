@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/infrastructure"
 )
 
 // testScenarioInputs is the read-only state the on-demand scenarios need in order

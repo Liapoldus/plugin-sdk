@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"liapoldus.local/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/infrastructure"
 )
 
 // testRotation answers the two contract durations a rotation has to respect: how

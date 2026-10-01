@@ -20,9 +20,9 @@ import (
 	"runtime"
 	"sync"
 
-	"liapoldus.local/plugin-sdk/domain/models"
-	"liapoldus.local/plugin-sdk/infrastructure"
-	"liapoldus.local/plugin-sdk/presentation"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/presentation"
 )
 
 var (

@@ -251,12 +251,12 @@ describe("no second lifecycle model exists behind the contract", () => {
 describe("the SDK depends on nothing but its own domain", () => {
   it("imports no Core, pluginprotocol, Caddy or third-party module", () => {
     const module = readFileSync(resolve(projectRoot, "go.mod"), "utf8");
-    const allowed = /^module\s+liapoldus\.local\/plugin-sdk$/m;
+    const allowed = /^module\s+github\.com\/Liapoldus\/plugin-sdk$/m;
     const requirements = [...module.matchAll(/^require\s+(.*)$/gm)].flatMap((match) =>
       match[1].trim().split(/\s+/),
     );
 
-    expect(allowed.test(module), "the module path is the local SDK path").toBe(true);
+    expect(allowed.test(module), "the module path is the canonical SDK path").toBe(true);
     expect(requirements, "the SDK requires no module").toEqual([]);
   });
 
@@ -274,7 +274,7 @@ describe("the SDK depends on nothing but its own domain", () => {
         specs.push(spec[1]);
       }
       for (const imported of specs) {
-        const internal = imported.startsWith("liapoldus.local/plugin-sdk/");
+        const internal = imported.startsWith("github.com/Liapoldus/plugin-sdk/");
         const foreign = !internal && imported.includes(".");
         if (foreign) {
           offenders.push(`${path} imports ${imported}`);

@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 var (

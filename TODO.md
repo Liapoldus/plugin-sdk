@@ -14,10 +14,10 @@
 Этот Go module — общий SDK для создания plugin services и единственный владелец
 Core↔plugin REST lifecycle contracts.
 
-`go.mod` использует временный local module path `liapoldus.local/plugin-sdk`.
-Git remote задан как `https://github.com/Liapoldus/plugin-sdk.git`; canonical
-Go module path остаётся временным до отдельного решения владельца. Не менять
-imports автоматически.
+Владелец утвердил canonical module path `github.com/Liapoldus/plugin-sdk`
+2026-09-30. `go.mod`, SDK imports, Core, Server и forms-db consumers переведены на него.
+Не выпускать SDK до сквозных gates. Git remote:
+`https://github.com/Liapoldus/plugin-sdk.git`.
 
 Этот документ — reconciled status v1-среза: каждый исходный пункт помечен
 `[x]` только вместе с исполняемым доказательством, `⚠️` — реализовано, но
@@ -71,7 +71,9 @@ schema не копируются hardcode-строками по consumers.
   deadlines, cancellation, request/response validation, `CloseIdleConnections`,
   safe `controlPlaneError` без cause/адреса/документа, типизированные outcome.
   `performControlCall` классифицирует transport только по context и никогда не
-  парсит строку ошибки. Evidence: 176 исполняемых тестов, включая «refuses a
+  парсит строку ошибки. Контекст HTTP-вызова остаётся активным до закрытия
+  response body; отдельный regression test воспроизводил обрыв между headers
+  и чтением schema. Evidence: 178 исполняемых тестов, включая «refuses a
   descriptor past the contract request limit, at exactly one byte over».
 - [x] Bootstrap сертификата для вручную запускаемого v1. Trust roots и
   identities принадлежат оператору: SDK не встраивает CA и не генерирует
@@ -133,6 +135,17 @@ schema не копируются hardcode-строками по consumers.
   answers a pull Core cancels», «reports deadlineExceeded», «reports
   coreUnavailable», «never applies a generation a refused request announced»,
   «keeps the applied generation usable through every pull refusal».
+- [ ] Добавить отдельный mTLS REST streaming endpoint для bounded artifact
+  transfer Core→plugin. Это технический lifecycle/control transport, не
+  `pluginprotocol` peer method: потоковая передача metadata и одного artifact,
+  cancellation/backpressure, digest/byte limits и typed receipt; product
+  archive/site validation принадлежит Server plugin. Зафиксировать контракт
+  сначала в SDK и проверить реальным Core→SDK→Server child-process тестом.
+- [ ] Опубликовать и реализовать общий SDK REST контракт Admin Surface
+  discovery/action delivery, включая mTLS identity, bounds и typed errors.
+  Product pages/actions/schema принадлежат plugins; удалённый
+  `pluginprotocol/contracts/admin-ui` не восстанавливать. Core Management API
+  может лишь аутентифицированно маршрутизировать и аудировать этот контракт.
 
 ## P1 — plugin author experience и observability
 
@@ -237,9 +250,12 @@ schema не копируются hardcode-строками по consumers.
   обе платформы нельзя. Заявление о platform coverage появится только вместе с
   исполняемым прогоном. В v1 binaries устанавливает и запускает оператор: SDK
   не управляет process lifecycle и не обращается к container API.
-- [ ] После решения владельца заменить временный module path и мигрировать Core
-  и plugin imports согласованно. Git repository/remote уже созданы; релиз,
-  license и CI остаются отдельными owner decisions.
+- [x] Перевести `go.mod`, SDK, Core и Server imports на утверждённый
+  `github.com/Liapoldus/plugin-sdk`; локальные SDK/Core builds проходят.
+- [x] Подключить forms-db к SDK: `go build ./...`, `go vet ./...` и plugin
+  TypeScript suite прошли 2026-10-01; child-process SDK REST/mTLS и прямой
+  Server→forms-db peer/HTTP маршрут подтверждены тестом с двумя процессами.
+- [ ] Проверить license/CI и настоящий Core→оба plugins smoke до публикации.
 
 ## Отложено до v2: embedding и in-process adapter
 
@@ -274,7 +290,7 @@ plugin-side rollback, ровно один `Reload` use case, ровно один
 
 Открытые gates, которые не дают объявить SDK production-ready: P2.3
 (интеграция с Core, `plugins/server` и `plugins/forms-db` по их owner tasks),
-P2.4 (Linux-прогон) и P2.5 (решение владельца по module path). P2.1
+P2.4 (Linux-прогон) и настоящий Core→plugins smoke. P2.1
 закрыт: пять сценариев исполняются против живого процесса, и нетавтологичность
 каждой mTLS-проверки подтверждена подстановкой живого credential. Секретов в fixtures, логах, errors, metrics и ACK нет;
 временные credentials фикстуры — test-only и не являются credentials

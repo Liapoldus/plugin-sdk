@@ -177,12 +177,11 @@ key, DSN, grant handle и transport secrets не пишутся. `application.Ou
 внутреннюю причину клиенту: наружу уходят только outcome и
 зарегистрированный contract-ом code.
 
-## Временная идентичность модуля
+## Canonical module path
 
-`liapoldus.local/plugin-sdk` — временный локальный Go module path, утверждённый
-только для разработки в workspace. Это не canonical import path, не Git remote
-и не адрес публикации. До назначения постоянного module path/remote модуль и
-его API нельзя публиковать, а release, license и CI не согласованы.
+Canonical import path, утверждённый владельцем: `github.com/Liapoldus/plugin-sdk`.
+`go.mod`, SDK imports, Core и Server consumer теперь используют этот путь.
+Не выпускать модуль, пока forms-db и общие integration gates не пройдены.
 
 Нормативная архитектура и migration plan находятся в
 [документации Core](/core/architecture/target).
@@ -199,5 +198,4 @@ TypeScript conformance поднимает реальный mTLS child process, �
 listener'а (revoked, wrong-identity, expired), ротация credentials на диске с
 проверкой нового serial на проводе, reconnect и close race под нагрузкой, а
 также graceful shutdown с запросом in flight. Открытые gates перечислены в
-[TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md): интеграция с Core и продуктовыми plugins, Linux-прогон и
-решение владельца по каноническому module path.
+[TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md): интеграция с Core и продуктовыми plugins и Linux-прогон.

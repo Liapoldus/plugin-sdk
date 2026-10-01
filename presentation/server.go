@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // ErrMissingHandlerDependency is returned by NewHandlerSet when one of the ports

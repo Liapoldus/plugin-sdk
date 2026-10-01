@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // The response header names Core publishes for an exact-generation pull are

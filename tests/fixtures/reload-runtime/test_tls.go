@@ -23,9 +23,9 @@ import (
 	"net/url"
 	"time"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/domain/models"
-	"liapoldus.local/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/infrastructure"
 )
 
 var errTestPKI = errors.New("test PKI generation failed")

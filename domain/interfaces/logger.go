@@ -3,7 +3,7 @@ package interfaces
 import (
 	"context"
 
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // Field is one structured log record entry. Values reaching a Logger must

@@ -21,9 +21,9 @@ import (
 	"io"
 	"net/http"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/domain/models"
-	"liapoldus.local/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/infrastructure"
 )
 
 var errTestControl = errors.New("test control operation refused")
@@ -493,6 +493,10 @@ func (control *testControl) handleConnections(w http.ResponseWriter, r *http.Req
 		control.fail(w, fmt.Errorf("%w: no transport faults are wired", errTestControl))
 		return
 	}
+	// A successful recovery call may legitimately leave an HTTP keep-alive
+	// connection idle. Close that reusable connection before checking whether
+	// the deliberately dropped connections themselves were released.
+	control.client.CloseIdleConnections()
 	connections := control.scenarios.inputs.connections
 	settled := connections.settle(
 		testSeconds(control.contract.Deadlines.PluginShutdownGraceSeconds) / testLoadDrainGraceDivisor)

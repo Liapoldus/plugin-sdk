@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // SecretBroker issues and redeems scoped, expiring, one-use grants for secret

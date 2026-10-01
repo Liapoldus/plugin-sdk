@@ -14,6 +14,13 @@
 отдельному Plugin SDK contract; конкретное содержимое page/actions остаётся
 plugin-owned. Не размещать Admin Surface в `pluginprotocol`, который отвечает
 только за generic plugin-to-plugin communication.
+Для action с бинарным artifact Core передаёт metadata и один ограниченный
+поток через отдельный mTLS Plugin SDK REST endpoint. SDK владеет framing,
+ограничением входящих байтов, cancellation/backpressure и receipt envelope;
+плагин владеет schema metadata, форматом архива, проверкой содержимого и
+durable operation. Core не импортирует peer-only `pluginprotocol` и не
+буферизует весь artifact. Этот endpoint пока является целевым контрактом,
+а не реализованной частью v1 runtime; см. SDK TODO и Server acceptance.
 Это требуемое расширение Core API, указанное в
 [API boundaries](/architecture/api-boundaries); endpoint не является
 неофициальным direct-plugin URL.

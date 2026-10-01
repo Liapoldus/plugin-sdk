@@ -1,7 +1,7 @@
 package application
 
 import (
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // Readiness reports the configuration generation this replica has actually

@@ -8,7 +8,7 @@ describe("Plugin SDK layer structure", () => {
   it("contains only the four approved production layers", () => {
     const layerNames = readdirSync(projectRoot)
       .filter((name) => statSync(resolve(projectRoot, name)).isDirectory())
-      .filter((name) => !["tests", "contracts", "node_modules"].includes(name))
+      .filter((name) => ![".git", "docs", "tests", "contracts", "node_modules"].includes(name))
       .sort();
 
     expect(layerNames).toEqual([
@@ -37,7 +37,7 @@ describe("Plugin SDK layer structure", () => {
     for (const layer of Object.keys(allowed)) {
       for (const path of goFiles(resolve(projectRoot, layer))) {
         const source = readFileSync(path, "utf8");
-        for (const match of source.matchAll(/"liapoldus\.local\/plugin-sdk\/([^"]+)"/g)) {
+        for (const match of source.matchAll(/"github\.com\/Liapoldus\/plugin-sdk\/([^"]+)"/g)) {
           expect(allowed[layer]).toContain(`${match[1].split("/")[0]}/`);
         }
       }

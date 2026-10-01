@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
 )
 
 var (

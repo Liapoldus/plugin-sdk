@@ -5,8 +5,8 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // Kind is the closed vocabulary of generic lifecycle events the SDK itself

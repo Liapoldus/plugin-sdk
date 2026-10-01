@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
 )
 
 // RedactFields is the redaction policy of every structured record the SDK

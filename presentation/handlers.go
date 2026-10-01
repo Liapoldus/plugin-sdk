@@ -9,7 +9,7 @@ import (
 	"mime"
 	"net/http"
 
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // handleHealth answers the liveness endpoint with the injected status and the

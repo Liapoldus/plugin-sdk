@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"liapoldus.local/plugin-sdk/domain/interfaces"
-	"liapoldus.local/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/infrastructure"
 )
 
 // testChurnAttempts is how many connections are abandoned mid-request. It is large

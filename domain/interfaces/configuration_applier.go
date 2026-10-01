@@ -3,7 +3,7 @@ package interfaces
 import (
 	"context"
 
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // ConfigurationApplier is the plugin-owned boundary. The plugin validates the

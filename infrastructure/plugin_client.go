@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"liapoldus.local/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
 
 // The Core-side client reaches the plugin lifecycle surface over the same
@@ -422,9 +422,9 @@ func (client *PluginClient) call(ctx context.Context, name, accept string, maxim
 	if err != nil {
 		return nil, controlUnusable(kind, err)
 	}
-	defer cancel()
 	request, err := http.NewRequestWithContext(callCtx, route.Method, target.String(), body)
 	if err != nil {
+		cancel()
 		return nil, controlUnusable(kind, ErrControlTransportFailed)
 	}
 	if body != nil {
@@ -433,9 +433,28 @@ func (client *PluginClient) call(ctx context.Context, name, accept string, maxim
 	request.Header.Set("accept", accept)
 	response, err := performControlCall(client.transport, request, kind)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
+	if response.Body == nil {
+		cancel()
+		return nil, controlUnusable(kind, ErrControlPlaneUnusable)
+	}
+	response.Body = &controlResponseBody{ReadCloser: response.Body, cancel: cancel}
 	return response, nil
+}
+
+// controlResponseBody keeps the request deadline active while the caller reads
+// the response. Cancelling in call() before the body is consumed can truncate
+// an otherwise successful response after its headers arrive.
+type controlResponseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (body *controlResponseBody) Close() error {
+	body.cancel()
+	return body.ReadCloser.Close()
 }
 
 // document applies the contract's rules to one successful response: the exact
