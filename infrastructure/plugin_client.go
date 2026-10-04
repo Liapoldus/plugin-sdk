@@ -3,11 +3,17 @@ package infrastructure
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"regexp"
+	"strings"
 
 	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
@@ -22,13 +28,16 @@ import (
 // logical names. They are the only endpoint keys this package may use; no path,
 // method or route string is written here.
 const (
-	pluginRouteIdentity     = "identity"
-	pluginRouteManifest     = "manifest"
-	pluginRouteConfigSchema = "configSchema"
-	pluginRouteHealth       = "health"
-	pluginRouteReady        = "ready"
-	pluginRouteReload       = "reload"
-	pluginRouteMetrics      = "metrics"
+	pluginRouteIdentity       = "identity"
+	pluginRouteManifest       = "manifest"
+	pluginRouteConfigSchema   = "configSchema"
+	pluginRouteHealth         = "health"
+	pluginRouteReady          = "ready"
+	pluginRouteReload         = "reload"
+	pluginRouteArtifactStream = "artifactStream"
+	pluginRouteAdminSurface   = "adminSurface"
+	pluginRouteAdminAction    = "adminAction"
+	pluginRouteMetrics        = "metrics"
 )
 
 // controlErrorNotReady is the contract error key of the one non-success answer
@@ -46,7 +55,30 @@ var controlPluginRouteNames = [...]string{
 	pluginRouteHealth,
 	pluginRouteReady,
 	pluginRouteReload,
+	pluginRouteArtifactStream,
+	pluginRouteAdminSurface,
+	pluginRouteAdminAction,
 	pluginRouteMetrics,
+}
+
+// ArtifactStreamResult preserves the product-owned result from a streamed
+// action. The SDK does not inspect its fields or classify product errors.
+type ArtifactStreamResult struct {
+	StatusCode int
+	Body       []byte
+}
+
+// AdminSurfaceDocument contains the plugin-owned descriptor as exact bytes and
+// the digest calculated over those bytes, without decoding or re-encoding it.
+type AdminSurfaceDocument struct {
+	Bytes  []byte
+	SHA256 string
+}
+
+// AdminActionResult preserves the product-owned HTTP status and exact JSON body.
+type AdminActionResult struct {
+	StatusCode int
+	Body       []byte
 }
 
 // PluginClient is the Core-side control client of exactly one plugin replica.
@@ -75,6 +107,304 @@ type PluginClient struct {
 	notReady  int
 	reload    int
 	read      int
+}
+
+// ArtifactStream forwards a JSON metadata part and one live artifact part to
+// the plugin over the contract's per-replica mTLS channel. It consumes and closes
+// artifact; callers must pass the request body they are forwarding so cancellation
+// can close its source. Neither part is buffered as a whole.
+func (client *PluginClient) ArtifactStream(ctx context.Context, invocation models.ArtifactInvocation, metadata []byte, contentType string, artifact io.ReadCloser) (ArtifactStreamResult, error) {
+	if client == nil || artifact == nil {
+		return ArtifactStreamResult{}, ErrInvalidControlCall
+	}
+	defer artifact.Close()
+	stream := client.contract.Plugin.ArtifactStream
+	if err := invocation.Validate(); err != nil {
+		return ArtifactStreamResult{}, err
+	}
+	if int64(len(metadata)) > stream.MaximumMetadataBytes {
+		return ArtifactStreamResult{}, ErrControlRequestOversized
+	}
+	if !models.ValidJSONObject(metadata) {
+		return ArtifactStreamResult{}, ErrControlDocument
+	}
+	if _, _, err := mime.ParseMediaType(contentType); err != nil || strings.ContainsAny(contentType, "\r\n") || int64(len(contentType)) > stream.MaximumMultipartOverheadBytes {
+		return ArtifactStreamResult{}, ErrControlMediaType
+	}
+	invocationHeaders, err := artifactInvocationHeaders(invocation, stream.InvocationContext)
+	if err != nil {
+		return ArtifactStreamResult{}, err
+	}
+	endpoint, ok := client.routes[pluginRouteArtifactStream]
+	if !ok {
+		return ArtifactStreamResult{}, ErrInvalidControlCall
+	}
+	target, err := controlEndpointURL(client.baseURL, endpoint.Path)
+	if err != nil {
+		return ArtifactStreamResult{}, err
+	}
+	callCtx, cancel, err := controlCallContext(ctx, client.contract.Deadlines.ArtifactStreamSeconds)
+	if err != nil {
+		return ArtifactStreamResult{}, err
+	}
+	defer cancel()
+	pipeReader, pipeWriter := io.Pipe()
+	multipartWriter := multipart.NewWriter(pipeWriter)
+	production := make(chan error, 1)
+	go func() {
+		production <- writeArtifactMultipart(pipeWriter, multipartWriter, stream, metadata, contentType, artifact)
+	}()
+	request, err := http.NewRequestWithContext(callCtx, endpoint.Method, target.String(), pipeReader)
+	if err != nil {
+		_ = pipeReader.CloseWithError(err)
+		_ = artifact.Close()
+		<-production
+		return ArtifactStreamResult{}, ErrControlTransportFailed
+	}
+	request.Header.Set("content-type", multipartWriter.FormDataContentType())
+	request.Header.Set("accept", client.contract.Plugin.Responses.ContentTypes.JSON)
+	for name, value := range invocationHeaders {
+		request.Header.Set(name, value)
+	}
+	transport, ok := client.transport.(ArtifactControlTransport)
+	if !ok {
+		_ = pipeReader.CloseWithError(ErrInvalidControlCall)
+		_ = artifact.Close()
+		<-production
+		return ArtifactStreamResult{}, ErrInvalidControlCall
+	}
+	response, err := performArtifactControlCall(transport, request)
+	if err != nil {
+		_ = pipeReader.CloseWithError(err)
+		_ = artifact.Close()
+		<-production
+		return ArtifactStreamResult{}, err
+	}
+	if response.Body == nil {
+		_ = pipeReader.CloseWithError(ErrControlPlaneUnusable)
+		_ = artifact.Close()
+		<-production
+		return ArtifactStreamResult{}, ErrControlPlaneUnusable
+	}
+	if response.StatusCode != stream.AcceptedStatus &&
+		(response.StatusCode < http.StatusBadRequest || response.StatusCode >= http.StatusInternalServerError) {
+		_ = response.Body.Close()
+		_ = pipeReader.CloseWithError(ErrControlDocument)
+		_ = artifact.Close()
+		<-production
+		return ArtifactStreamResult{}, controlUnusable(controlCallReload, ErrControlDocument)
+	}
+	body, readErr := readControlBody(response.Body, stream.MaximumReceiptBytes)
+	_ = response.Body.Close()
+	_ = pipeReader.Close()
+	_ = artifact.Close()
+	productionErr := <-production
+	if productionErr != nil {
+		return ArtifactStreamResult{}, productionErr
+	}
+	if readErr != nil {
+		return ArtifactStreamResult{}, readErr
+	}
+	if !models.ValidJSONObject(body) {
+		return ArtifactStreamResult{}, ErrControlDocument
+	}
+	return ArtifactStreamResult{StatusCode: response.StatusCode, Body: body}, nil
+}
+
+// AdminSurface returns the plugin-owned management descriptor exactly as
+// published. The SDK computes a digest for Core to bind to a subsequent action.
+func (client *PluginClient) AdminSurface(ctx context.Context) (AdminSurfaceDocument, error) {
+	if client == nil {
+		return AdminSurfaceDocument{}, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	response, err := client.call(ctx, pluginRouteAdminSurface, client.contract.Plugin.AdminSurface.MediaType,
+		client.contract.Plugin.AdminSurface.MaximumBytes, controlCallReload, nil)
+	if err != nil {
+		return AdminSurfaceDocument{}, err
+	}
+	defer response.Body.Close()
+	if !controlIsSuccess(response.StatusCode) {
+		return AdminSurfaceDocument{}, client.refusal(response, client.contract.Plugin.AdminSurface.MaximumBytes)
+	}
+	body, err := client.document(response, client.contract.Plugin.AdminSurface, controlCallReload)
+	if err != nil {
+		return AdminSurfaceDocument{}, err
+	}
+	digest := sha256.Sum256(body)
+	return AdminSurfaceDocument{Bytes: body, SHA256: "sha256:" + hex.EncodeToString(digest[:])}, nil
+}
+
+// AdminAction performs one authorized JSON invocation. It deliberately does not
+// retry or interpret the plugin-owned status/body; callers own product semantics.
+func (client *PluginClient) AdminAction(ctx context.Context, invocation models.AdminActionInvocation, input []byte) (AdminActionResult, error) {
+	if client == nil || invocation.Validate() != nil {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	contract := client.contract.Plugin.AdminAction
+	if int64(len(input)) > contract.MaximumRequestBytes || !models.ValidJSONObject(input) ||
+		len(invocation.PageID) > contract.MaximumPageIDBytes || len(invocation.ActionID) > contract.MaximumActionIDBytes {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrControlRequestOversized)
+	}
+	pattern, err := regexp.Compile(contract.PathSegmentPattern)
+	if err != nil || !pattern.MatchString(invocation.PageID) || !pattern.MatchString(invocation.ActionID) {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	endpoint, ok := client.routes[pluginRouteAdminAction]
+	if !ok {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	path := strings.Replace(endpoint.Path, "{page}", url.PathEscape(invocation.PageID), 1)
+	path = strings.Replace(path, "{action}", url.PathEscape(invocation.ActionID), 1)
+	target, err := controlEndpointURL(client.baseURL, path)
+	if err != nil {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	callCtx, cancel, err := controlCallContext(ctx, contract.DeadlineSeconds)
+	if err != nil {
+		return AdminActionResult{}, controlUnusable(controlCallReload, err)
+	}
+	defer cancel()
+	request, err := http.NewRequestWithContext(callCtx, endpoint.Method, target.String(), bytes.NewReader(input))
+	if err != nil {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrControlTransportFailed)
+	}
+	request.Header.Set("content-type", contract.MediaType)
+	request.Header.Set("accept", contract.MediaType)
+	for logical, header := range contract.InvocationContext.Headers {
+		value := adminInvocationValue(invocation, logical)
+		if value != "" {
+			request.Header.Set(header, value)
+		}
+	}
+	transport, ok := client.transport.(AdminActionControlTransport)
+	if !ok {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	response, err := performAdminActionControlCall(transport, request)
+	if err != nil {
+		return AdminActionResult{}, err
+	}
+	if response.Body == nil {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrControlPlaneUnusable)
+	}
+	defer response.Body.Close()
+	body, err := readControlBody(response.Body, contract.MaximumResponseBytes)
+	if err != nil {
+		return AdminActionResult{}, controlBodyFailure(controlCallReload, err)
+	}
+	if !models.ValidJSONObject(body) || response.StatusCode < contract.ResponseStatus.Minimum || response.StatusCode > contract.ResponseStatus.Maximum {
+		return AdminActionResult{}, controlUnusable(controlCallReload, ErrControlDocument)
+	}
+	return AdminActionResult{StatusCode: response.StatusCode, Body: body}, nil
+}
+
+func adminInvocationValue(invocation models.AdminActionInvocation, logical string) string {
+	switch logical {
+	case "callerId":
+		return invocation.CallerID
+	case "instanceId":
+		return invocation.InstanceID
+	case "pageId":
+		return invocation.PageID
+	case "actionId":
+		return invocation.ActionID
+	case "surfaceDigest":
+		return invocation.SurfaceDigest
+	case "requestId":
+		return invocation.RequestID
+	case "idempotencyKey":
+		return invocation.IdempotencyKey
+	case "ifMatch":
+		return invocation.IfMatch
+	default:
+		return ""
+	}
+}
+
+func artifactInvocationHeaders(invocation models.ArtifactInvocation, contract ArtifactInvocationContract) (map[string]string, error) {
+	values := map[string]string{
+		"callerId": invocation.CallerID, "instanceId": invocation.InstanceID,
+		"pageId": invocation.PageID, "actionId": invocation.ActionID,
+		"surfaceDigest": invocation.SurfaceDigest, "idempotencyKey": invocation.IdempotencyKey,
+		"requestId": invocation.RequestID, "ifMatch": invocation.IfMatch,
+	}
+	headers := make(map[string]string, len(contract.Headers))
+	total := 0
+	for logical, header := range contract.Headers {
+		value := values[logical]
+		if value == "" {
+			if contains(contract.Required, logical) {
+				return nil, models.ErrInvalidArtifactInvocation
+			}
+			continue
+		}
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, models.ErrInvalidArtifactInvocation
+		}
+		total += len(logical) + len(header) + len(value)
+		headers[header] = value
+	}
+	if total > contract.MaximumBytes {
+		return nil, ErrControlRequestOversized
+	}
+	return headers, nil
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+// ArtifactControlTransport preserves the bounded request-context deadline while
+// allowing the streaming endpoint's longer contract deadline than JSON calls.
+type ArtifactControlTransport interface {
+	DoArtifact(request *http.Request) (*http.Response, error)
+}
+
+// AdminActionControlTransport performs a bounded action request using its
+// request-context deadline rather than the shorter general control timeout.
+type AdminActionControlTransport interface {
+	DoAdminAction(request *http.Request) (*http.Response, error)
+}
+
+func writeArtifactMultipart(pipe *io.PipeWriter, writer *multipart.Writer, contract ArtifactStreamContract, metadata []byte, contentType string, artifact io.Reader) error {
+	metadataHeader := make(textproto.MIMEHeader)
+	metadataHeader.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": contract.Parts[0]}))
+	metadataHeader.Set("Content-Type", contract.MetadataMediaType)
+	metadataPart, err := writer.CreatePart(metadataHeader)
+	if err == nil {
+		_, err = metadataPart.Write(metadata)
+	}
+	if err == nil {
+		artifactHeader := make(textproto.MIMEHeader)
+		artifactHeader.Set("Content-Disposition", mime.FormatMediaType("form-data", map[string]string{"name": contract.Parts[1]}))
+		artifactHeader.Set("Content-Type", contentType)
+		var artifactPart io.Writer
+		artifactPart, err = writer.CreatePart(artifactHeader)
+		if err == nil {
+			var copied int64
+			copied, err = io.Copy(artifactPart, io.LimitReader(artifact, contract.MaximumArtifactBytes+1))
+			if copied > contract.MaximumArtifactBytes {
+				err = ErrControlRequestOversized
+			}
+			if err == nil && copied < contract.MinimumArtifactBytes {
+				err = ErrControlDocument
+			}
+		}
+	}
+	closeErr := writer.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = pipe.CloseWithError(err)
+		return err
+	}
+	return pipe.Close()
 }
 
 // NewPluginClient builds the Core-side control client for one plugin replica.
@@ -328,7 +658,9 @@ func (client *PluginClient) Identity(ctx context.Context) (models.Registration, 
 	if !controlIsSuccess(response.StatusCode) {
 		return models.Registration{}, client.refusal(response, registration.MaximumBytes)
 	}
-	body, err := client.document(response, DocumentContract(registration), controlCallReload)
+	body, err := client.document(response, DocumentContract{
+		MediaType: registration.MediaType, MaximumBytes: registration.MaximumBytes, Required: registration.Required,
+	}, controlCallReload)
 	if err != nil {
 		return models.Registration{}, err
 	}

@@ -8,6 +8,9 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"regexp"
+	"strings"
+	"time"
 
 	"github.com/Liapoldus/plugin-sdk/domain/models"
 )
@@ -73,6 +76,125 @@ func (set *HandlerSet) handleConfigurationSchema(writer http.ResponseWriter, req
 	set.serveMetadata(writer, request, set.metadata.ConfigurationSchema, set.contracts.ConfigurationSchema)
 }
 
+func (set *HandlerSet) handleAdminSurface(writer http.ResponseWriter, request *http.Request) {
+	contents, err := set.adminSurface.AdminSurface(request.Context())
+	if err != nil {
+		set.writeTransportProblem(writer, internalErrorKey)
+		return
+	}
+	if int64(len(contents)) > set.contracts.AdminSurface.MaximumBytes || !models.ValidJSONObject(contents) {
+		set.writeTransportProblem(writer, internalErrorKey)
+		return
+	}
+	set.writeDocument(writer, set.contracts.AdminSurface.MediaType, http.StatusOK, contents)
+}
+
+func (set *HandlerSet) handleAdminAction(writer http.ResponseWriter, request *http.Request) {
+	contract := set.contracts.AdminAction
+	pageID, actionID := request.PathValue("page"), request.PathValue("action")
+	pattern, err := regexp.Compile(contract.PathSegmentPattern)
+	if err != nil || len(pageID) > contract.MaximumPageIDBytes || len(actionID) > contract.MaximumActionIDBytes ||
+		!pattern.MatchString(pageID) || !pattern.MatchString(actionID) {
+		set.writeErrorProblem(writer, invalidRequestKey)
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("content-type"))
+	if err != nil || mediaType != contract.MediaType {
+		set.writeTransportProblem(writer, unsupportedMediaTypeKey)
+		return
+	}
+	invocation, err := set.adminInvocation(request, pageID, actionID)
+	if err != nil {
+		set.writeErrorProblem(writer, invalidRequestKey)
+		return
+	}
+	if request.ContentLength > contract.MaximumRequestBytes {
+		set.writeTransportProblem(writer, payloadOversizedKey)
+		return
+	}
+	request.Body = http.MaxBytesReader(writer, request.Body, contract.MaximumRequestBytes)
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		if oversized(err) {
+			set.writeTransportProblem(writer, payloadOversizedKey)
+		} else {
+			set.writeErrorProblem(writer, invalidRequestKey)
+		}
+		return
+	}
+	if !models.ValidJSONObject(body) {
+		set.writeErrorProblem(writer, invalidRequestKey)
+		return
+	}
+	deadline := time.Now().Add(contract.Deadline)
+	if err := http.NewResponseController(writer).SetWriteDeadline(deadline); err != nil {
+		set.writeTransportProblem(writer, internalErrorKey)
+		return
+	}
+	ctx, cancel := context.WithDeadline(request.Context(), deadline)
+	defer cancel()
+	result, err := set.adminActions.HandleAdminAction(ctx, AdminActionInput{Invocation: invocation, Body: body})
+	if err != nil {
+		set.writeTransportProblem(writer, internalErrorKey)
+		return
+	}
+	if result.StatusCode < contract.ResponseStatus.Minimum || result.StatusCode > contract.ResponseStatus.Maximum ||
+		int64(len(result.Body)) > contract.MaximumResponseBytes || !models.ValidJSONObject(result.Body) {
+		set.writeTransportProblem(writer, internalErrorKey)
+		return
+	}
+	set.writeDocument(writer, contract.MediaType, result.StatusCode, result.Body)
+}
+
+func (set *HandlerSet) adminInvocation(request *http.Request, pageID, actionID string) (models.AdminActionInvocation, error) {
+	contract := set.contracts.AdminAction.InvocationContext
+	values := make(map[string]string, len(contract.Headers))
+	allowed := make(map[string]struct{}, len(contract.Headers))
+	for logical, header := range contract.Headers {
+		allowed[http.CanonicalHeaderKey(header)] = struct{}{}
+		values[logical] = ""
+		all := request.Header.Values(header)
+		if len(all) > 1 {
+			return models.AdminActionInvocation{}, models.ErrInvalidAdminActionInvocation
+		}
+		if len(all) == 1 {
+			values[logical] = all[0]
+		}
+	}
+	for header := range request.Header {
+		if strings.HasPrefix(strings.ToLower(header), strings.ToLower(contract.UnknownHeaderPrefix)) {
+			if _, ok := allowed[http.CanonicalHeaderKey(header)]; !ok {
+				return models.AdminActionInvocation{}, models.ErrInvalidAdminActionInvocation
+			}
+		}
+	}
+	total := 0
+	for logical, value := range values {
+		if value == "" && containsContractValue(contract.Required, logical) {
+			return models.AdminActionInvocation{}, models.ErrInvalidAdminActionInvocation
+		}
+		total += len(logical) + len(value)
+	}
+	if total > contract.MaximumBytes || values["pageId"] != pageID || values["actionId"] != actionID {
+		return models.AdminActionInvocation{}, models.ErrInvalidAdminActionInvocation
+	}
+	invocation := models.AdminActionInvocation{
+		CallerID: values["callerId"], InstanceID: values["instanceId"], PageID: pageID,
+		ActionID: actionID, SurfaceDigest: values["surfaceDigest"], RequestID: values["requestId"],
+		IdempotencyKey: values["idempotencyKey"], IfMatch: values["ifMatch"],
+	}
+	return invocation, invocation.Validate()
+}
+
+func containsContractValue(values []string, candidate string) bool {
+	for _, value := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
+
 // serveMetadata publishes one plugin-owned document.
 //
 // The bytes are written exactly as the plugin produced them: the manifest and the
@@ -107,7 +229,8 @@ func (set *HandlerSet) serveMetadata(
 	set.writeDocument(writer, document.MediaType, http.StatusOK, contents)
 }
 
-// handleReload is the only write path.
+// handleReload is the lifecycle write path; binary capability writes are
+// handled separately by the generic artifact-stream route.
 //
 // The notification is read under the contract media type and the contract limit,
 // decoded as exactly one object with no unknown field and no trailing value, and

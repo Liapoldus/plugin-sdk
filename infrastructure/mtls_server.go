@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -99,6 +100,13 @@ type MutualTLSServer struct {
 type mutualTLSServerState struct {
 	credentials *Credentials
 	config      *tls.Config
+}
+
+func maximumSeconds(first, second int) time.Duration {
+	if second > first {
+		first = second
+	}
+	return time.Duration(first) * time.Second
 }
 
 // NewMutualTLSServer builds the plugin-side HTTPS server. It refuses to build a
@@ -498,6 +506,59 @@ func (mutualTLS *MutualTLSClient) Do(request *http.Request) (*http.Response, err
 		return nil, ErrInvalidClientTLS
 	}
 	return mutualTLS.client.Do(request)
+}
+
+// DoArtifact performs an already-built streaming artifact request with the same
+// pinned mutual-TLS settings as Do, but uses a per-request transport so the
+// artifact deadline does not lengthen ordinary response-header timeouts.
+func (mutualTLS *MutualTLSClient) DoArtifact(request *http.Request) (*http.Response, error) {
+	return mutualTLS.doWithDeclaredRequestDeadline(request)
+}
+
+// DoAdminAction uses the request's contract-derived deadline instead of the
+// shorter general control-call timeout. The request remains bound to the same
+// pinned mutual-TLS transport and does not follow redirects.
+func (mutualTLS *MutualTLSClient) DoAdminAction(request *http.Request) (*http.Response, error) {
+	return mutualTLS.doWithDeclaredRequestDeadline(request)
+}
+
+// doWithDeclaredRequestDeadline keeps long-running, explicitly-deadlined
+// requests independent from the ordinary client timeout and response-header
+// timeout. The request context remains the sole upper bound for these calls.
+func (mutualTLS *MutualTLSClient) doWithDeclaredRequestDeadline(request *http.Request) (*http.Response, error) {
+	if mutualTLS == nil || request == nil || mutualTLS.client == nil || mutualTLS.transport == nil || request.URL == nil || request.URL.Scheme != "https" {
+		return nil, ErrInvalidClientTLS
+	}
+	transport := mutualTLS.transport.Clone()
+	transport.ResponseHeaderTimeout = 0
+	client := &http.Client{
+		Transport: transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return ErrMutualTLSRedirect
+		},
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		transport.CloseIdleConnections()
+		return nil, err
+	}
+	if response.Body != nil {
+		response.Body = &deadlineTransportBody{ReadCloser: response.Body, closeIdle: transport.CloseIdleConnections}
+	}
+	return response, nil
+}
+
+type deadlineTransportBody struct {
+	io.ReadCloser
+	closeIdle func()
+}
+
+func (body *deadlineTransportBody) Close() error {
+	err := body.ReadCloser.Close()
+	if body.closeIdle != nil {
+		body.closeIdle()
+	}
+	return err
 }
 
 // CloseIdleConnections releases pooled connections, so a rotated credential is not

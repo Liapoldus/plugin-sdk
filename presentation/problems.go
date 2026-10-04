@@ -23,6 +23,7 @@ const (
 	unsupportedMediaTypeKey = "unsupportedMediaType"
 	internalErrorKey        = "internalError"
 	notReadyKey             = "notReady"
+	invalidRequestKey       = "invalidRequest"
 )
 
 var (

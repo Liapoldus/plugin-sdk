@@ -1,9 +1,10 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { afterAll } from "vitest";
 
 import { projectRoot } from "./contract";
 import { fixture } from "./harness";
@@ -146,6 +147,13 @@ export type Answer = {
 
 let buildRoot: Promise<string> | undefined;
 const binaries = new Map<string, Promise<string>>();
+
+afterAll(async () => {
+  const root = buildRoot;
+  if (root) {
+    await rm(await root, { recursive: true, force: true });
+  }
+});
 
 function fixtureBinary(name: string): Promise<string> {
   const existing = binaries.get(name);

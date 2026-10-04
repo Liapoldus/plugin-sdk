@@ -193,7 +193,7 @@ describe("the routes the plugin surface publishes", () => {
   });
 
   it("serves every read-only endpoint at its registered path", async () => {
-    for (const name of endpointNames.filter((each) => each !== "reload" && each !== "ready")) {
+    for (const name of endpointNames.filter((each) => method(each) === "GET" && each !== "ready")) {
       const answer = await runtime.get(path(name));
       expect(answer.status, `${method(name)} ${path(name)}`).toBe(okStatus);
     }
@@ -209,7 +209,7 @@ describe("the routes the plugin surface publishes", () => {
     expect(answer.status).toBe(statusOfOutcome("unknownGeneration"));
   });
 
-  for (const name of endpointNames.filter((each) => each !== "reload")) {
+  for (const name of endpointNames.filter((each) => method(each) === "GET")) {
     it(`refuses a write to the read-only ${name} endpoint`, async () => {
       const answer = await runtime.post(path(name), "{}", mediaType.json);
 

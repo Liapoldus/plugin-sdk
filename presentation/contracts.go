@@ -1,7 +1,9 @@
 package presentation
 
 import (
+	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,15 +23,67 @@ type Endpoint struct {
 // carry. A document whose fields this layer owns is checked against the fields of
 // the model it serialises, so the two can never drift apart.
 type DocumentContract struct {
-	MediaType    string
-	MaximumBytes int64
-	Required     []string
+	MediaType       string
+	MaximumBytes    int64
+	Required        []string
+	DigestAlgorithm string
 }
 
 // ContentTypes are the two media types the plugin REST surface answers with.
 type ContentTypes struct {
 	JSON    string
 	Metrics string
+}
+
+// ArtifactStreamContract defines the generic multipart envelope the SDK reads.
+// Product metadata and artifact contents remain opaque to this transport.
+type ArtifactStreamContract struct {
+	MediaType                     string
+	MetadataMediaType             string
+	Parts                         []string
+	PartOrder                     []string
+	MaximumArtifactBytes          int64
+	MinimumArtifactBytes          int64
+	MaximumMetadataBytes          int64
+	MaximumMultipartOverheadBytes int64
+	MaximumRequestBytes           int64
+	MaximumReceiptBytes           int64
+	AcceptedStatus                int
+	FilenameForwarded             bool
+	Deadline                      time.Duration
+	InvocationContext             ArtifactInvocationContract
+}
+
+type ArtifactInvocationContract struct {
+	MaximumBytes int
+	Required     []string
+	Optional     []string
+	Headers      map[string]string
+}
+
+type AdminActionContract struct {
+	MediaType            string
+	MaximumRequestBytes  int64
+	MaximumResponseBytes int64
+	MaximumPageIDBytes   int
+	MaximumActionIDBytes int
+	PathSegmentPattern   string
+	ResponseStatus       StatusRangeContract
+	Deadline             time.Duration
+	InvocationContext    AdminInvocationContract
+}
+
+type StatusRangeContract struct {
+	Minimum int
+	Maximum int
+}
+
+type AdminInvocationContract struct {
+	MaximumBytes        int
+	UnknownHeaderPrefix string
+	Required            []string
+	Optional            []string
+	Headers             map[string]string
 }
 
 // Problem is the public-safe status and code of one contract refusal. It carries
@@ -55,13 +109,16 @@ type Contracts struct {
 	// published verbatim in the identity registration document.
 	ContractVersion string
 
-	IdentityEndpoint     Endpoint
-	ManifestEndpoint     Endpoint
-	ConfigSchemaEndpoint Endpoint
-	HealthEndpoint       Endpoint
-	ReadyEndpoint        Endpoint
-	ReloadEndpoint       Endpoint
-	MetricsEndpoint      Endpoint
+	IdentityEndpoint       Endpoint
+	ManifestEndpoint       Endpoint
+	ConfigSchemaEndpoint   Endpoint
+	HealthEndpoint         Endpoint
+	ReadyEndpoint          Endpoint
+	ReloadEndpoint         Endpoint
+	ArtifactStreamEndpoint Endpoint
+	AdminSurfaceEndpoint   Endpoint
+	AdminActionEndpoint    Endpoint
+	MetricsEndpoint        Endpoint
 
 	HealthStatus int
 	HealthBody   map[string]string
@@ -79,6 +136,9 @@ type Contracts struct {
 	// is honoured for them because the plugin, not the SDK, owns their shape.
 	Manifest            DocumentContract
 	ConfigurationSchema DocumentContract
+	ArtifactStream      ArtifactStreamContract
+	AdminSurface        DocumentContract
+	AdminAction         AdminActionContract
 	// Registration describes the identity document this replica publishes.
 	Registration DocumentContract
 
@@ -108,6 +168,9 @@ func (contracts Contracts) registeredEndpoints() []Endpoint {
 		contracts.HealthEndpoint,
 		contracts.ReadyEndpoint,
 		contracts.ReloadEndpoint,
+		contracts.ArtifactStreamEndpoint,
+		contracts.AdminSurfaceEndpoint,
+		contracts.AdminActionEndpoint,
 		contracts.MetricsEndpoint,
 	}
 }
@@ -171,7 +234,7 @@ func (contracts Contracts) Validate() error {
 		contracts.MaximumMetadataBytes <= 0 {
 		return ErrInvalidContracts
 	}
-	seen := make(map[string]struct{}, 7)
+	seen := make(map[string]struct{}, 10)
 	for _, endpoint := range contracts.registeredEndpoints() {
 		if !validEndpoint(endpoint) {
 			return ErrInvalidContracts
@@ -180,6 +243,21 @@ func (contracts Contracts) Validate() error {
 			return ErrInvalidContracts
 		}
 		seen[endpoint.Path] = struct{}{}
+	}
+	artifact := contracts.ArtifactStream
+	if artifact.MediaType == "" || artifact.MetadataMediaType == "" ||
+		artifact.MaximumArtifactBytes <= 0 || artifact.MinimumArtifactBytes <= 0 ||
+		artifact.MinimumArtifactBytes > artifact.MaximumArtifactBytes ||
+		artifact.MaximumMetadataBytes <= 0 || artifact.MaximumMultipartOverheadBytes <= 0 ||
+		artifact.MaximumReceiptBytes <= 0 || artifact.AcceptedStatus < 200 || artifact.AcceptedStatus >= 300 ||
+		artifact.Deadline <= 0 ||
+		artifact.FilenameForwarded || len(artifact.Parts) != 2 || len(artifact.PartOrder) != 2 ||
+		artifact.Parts[0] == "" || artifact.Parts[1] == "" || artifact.Parts[0] == artifact.Parts[1] ||
+		artifact.PartOrder[0] != artifact.Parts[0] || artifact.PartOrder[1] != artifact.Parts[1] ||
+		artifact.MaximumRequestBytes != artifact.MaximumArtifactBytes+artifact.MaximumMetadataBytes+artifact.MaximumMultipartOverheadBytes ||
+		artifact.InvocationContext.MaximumBytes <= 0 || len(artifact.InvocationContext.Required) == 0 ||
+		len(artifact.InvocationContext.Headers) != len(artifact.InvocationContext.Required)+len(artifact.InvocationContext.Optional) {
+		return ErrInvalidContracts
 	}
 	if contracts.HealthStatus < 100 || contracts.HealthStatus > 599 || len(contracts.HealthBody) == 0 {
 		return ErrInvalidContracts
@@ -215,6 +293,28 @@ func (contracts Contracts) Validate() error {
 	}
 	if err := contracts.ConfigurationSchema.check(); err != nil {
 		return err
+	}
+	if err := contracts.AdminSurface.check(); err != nil {
+		return fmt.Errorf("%w: admin surface document", err)
+	}
+	if contracts.AdminSurface.DigestAlgorithm == "" {
+		return fmt.Errorf("%w: admin surface digest algorithm", ErrInvalidContracts)
+	}
+	if !strings.Contains(contracts.AdminActionEndpoint.Path, "{page}") ||
+		!strings.Contains(contracts.AdminActionEndpoint.Path, "{action}") ||
+		contracts.AdminActionEndpoint.Method == "" {
+		return ErrInvalidContracts
+	}
+	admin := contracts.AdminAction
+	if admin.MediaType == "" || admin.MaximumRequestBytes <= 0 || admin.MaximumResponseBytes <= 0 ||
+		admin.MaximumPageIDBytes <= 0 || admin.MaximumActionIDBytes <= 0 || admin.PathSegmentPattern == "" ||
+		admin.Deadline <= 0 || admin.ResponseStatus.Minimum < 200 || admin.ResponseStatus.Maximum > 599 ||
+		admin.ResponseStatus.Minimum > admin.ResponseStatus.Maximum || admin.InvocationContext.MaximumBytes <= 0 ||
+		admin.InvocationContext.UnknownHeaderPrefix == "" || !validAdminInvocation(admin.InvocationContext) {
+		return ErrInvalidContracts
+	}
+	if _, err := regexp.Compile(admin.PathSegmentPattern); err != nil {
+		return ErrInvalidContracts
 	}
 	for _, key := range transportProblemKeys {
 		if _, ok := contracts.transportProblem(key); !ok {
@@ -262,6 +362,44 @@ func validEndpoint(endpoint Endpoint) bool {
 		}
 	}
 	return true
+}
+
+func validAdminInvocation(invocation AdminInvocationContract) bool {
+	required := []string{"callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "requestId"}
+	optional := []string{"idempotencyKey", "ifMatch"}
+	if len(invocation.Headers) != len(required)+len(optional) || !sameSet(invocation.Required, required) || !sameSet(invocation.Optional, optional) {
+		return false
+	}
+	seen := map[string]struct{}{}
+	for _, key := range append(append([]string{}, required...), optional...) {
+		name := invocation.Headers[key]
+		if name == "" || strings.ContainsAny(name, "\r\n :") {
+			return false
+		}
+		folded := strings.ToLower(name)
+		if _, ok := seen[folded]; ok {
+			return false
+		}
+		seen[folded] = struct{}{}
+	}
+	return true
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	set := make(map[string]struct{}, len(a))
+	for _, item := range a {
+		set[item] = struct{}{}
+	}
+	for _, item := range b {
+		if _, ok := set[item]; !ok {
+			return false
+		}
+		delete(set, item)
+	}
+	return len(set) == 0
 }
 
 // check validates the limits of a document this layer serves but does not own.

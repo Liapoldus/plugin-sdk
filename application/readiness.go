@@ -9,10 +9,10 @@ import (
 // refused. It never claims a generation that failed verification or application,
 // and it never reports a desired state on behalf of Core.
 //
-// Ready is false until the first successful apply. After that it stays true: a
-// refusal leaves the previously applied configuration fully active and only
-// changes PendingGeneration, so Core can fence a degraded replica without the
-// plugin guessing what Core wants.
+// Ready is false until the first successful apply and while a newer announced
+// generation is pending. A refusal preserves the last applied configuration,
+// but the replica is not eligible for new traffic until it applies the
+// announced generation or Core re-announces the active one.
 func (lifecycle *Lifecycle) Readiness() models.Readiness {
 	lifecycle.stateMu.RLock()
 	defer lifecycle.stateMu.RUnlock()
@@ -23,7 +23,7 @@ func (lifecycle *Lifecycle) Readiness() models.Readiness {
 		PendingGeneration: lifecycle.pending,
 	}
 	if lifecycle.active != nil {
-		readiness.Ready = true
+		readiness.Ready = lifecycle.pending == ""
 		readiness.Generation = lifecycle.active.Generation
 		readiness.SHA256 = lifecycle.active.SHA256
 		readiness.SchemaVersion = lifecycle.active.SchemaVersion

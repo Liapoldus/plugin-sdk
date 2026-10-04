@@ -11,10 +11,10 @@
   вызовов. Plugin регистрирует собственные методы/handlers; library не знает
   product names, payload schema или lifecycle Core.
 
-Библиотеки не зависят друг от друга. Их exact module path, REST routes, wire
-format и transport profiles публикуются владельцами; не угадывайте import path
-до назначения canonical remote Plugin SDK. Общие contracts не копируются в
-plugin repos.
+Библиотеки не зависят друг от друга. Canonical import path Plugin SDK —
+`github.com/Liapoldus/plugin-sdk`; точные REST routes принадлежат SDK, а wire
+format и transport profiles — `pluginprotocol`. Общие contracts не копируются
+в plugin repos.
 
 Каждый plugin владеет собственным Manifest, settings schema, capabilities,
 ошибками, Admin Surface и product data. Settings сохраняются Core в SQLite и
@@ -27,9 +27,10 @@ argv или application config files запрещено. Secret values извл�
 через scoped Core REST grants и не попадают в response, log, trace, error или
 audit.
 
-Для plugin-to-plugin взаимодействий Core публикует deny-by-default policy, но
-не проксирует payload. Peer connections идут напрямую с отдельными identities и
-trust roots. Carrier/security profile настраивается отдельно от
+Для plugin-to-plugin взаимодействий вызывающий plugin применяет собственную
+authorization policy через generic authorizer `pluginprotocol`; Core не
+публикует и не хранит такую policy и не проксирует payload. Peer connections
+идут напрямую с отдельными identities и trust roots. Carrier/security profile настраивается отдельно от
 application-level method names и payloads; смена carrier не меняет plugin
 handlers.
 

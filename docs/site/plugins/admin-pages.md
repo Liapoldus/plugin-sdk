@@ -95,6 +95,14 @@ ID страницы стабилен, задаётся в нижнем реги�
 | `POST /api/plugins/{instance}/admin/pages/{page}/actions/{action}` | action capability | requires `If-Match` and `Idempotency-Key`; validates action `inputSchema`; dangerous action uses the confirmation handshake below |
 | `GET /api/plugins/{instance}/admin/pages/{page}/health` | `health` projection | bounded status, no raw logs/secrets |
 
+For synchronous JSON actions, `Idempotency-Key` is correlation/audit metadata,
+not a deduplication key. Every separately accepted request dispatches the action
+again even if its key and input match an earlier request. Plugin SDK transports
+the value but stores no action response cache and promises no exactly-once
+effects; product CAS and domain rules determine the result of a repeated action.
+Durable artifact actions are different: their accepted operation has
+operation-level deduplication, as described above.
+
 До выдачи данных страницы или выполнения action backend Controller проверяет
 все перечисленные в `permissions` идентификаторы по правам аутентифицированного
 пользователя на каждом запросе; скрытие элементов только в UI не является
@@ -159,7 +167,9 @@ management bearer key или database path.
 
 ## Жизненный цикл и кэш
 
-1. Core запускает instance и проверяет manifest/health/settings.
+1. Оператор вручную запускает plugin process. Core подключается к заранее
+   объявленному endpoint и проверяет manifest, health/readiness и активную
+   generation; Core не управляет process lifecycle.
 2. Core запрашивает `admin.surface.get`, сверяет versioned contract и
    сохраняет `(instance, manifest version, surface digest)`.
 3. Constructor читает Surface через Core и отображает разрешённые страницы.

@@ -108,6 +108,9 @@ func (lifecycle *Lifecycle) Reload(ctx context.Context, request models.Reload) (
 
 	if settled, outcome, answered := lifecycle.settled(request); answered {
 		if outcome == models.OutcomeAlreadyActive {
+			if lifecycle.readiness != nil {
+				lifecycle.readiness.SetReady(true)
+			}
 			lifecycle.observe(ctx, KindReload, outcome)
 			return acknowledgement(settled, true, outcome), nil
 		}
@@ -154,16 +157,13 @@ func (lifecycle *Lifecycle) Reload(ctx context.Context, request models.Reload) (
 	}
 
 	lifecycle.stateMu.Lock()
-	firstActivation := lifecycle.active == nil
 	lifecycle.active = &request
 	lifecycle.pending = ""
 	lifecycle.stateMu.Unlock()
 
 	lifecycle.observe(ctx, KindReload, models.OutcomeApplied)
-	if firstActivation {
-		if lifecycle.readiness != nil {
-			lifecycle.readiness.SetReady(true)
-		}
+	if lifecycle.readiness != nil {
+		lifecycle.readiness.SetReady(true)
 	}
 	return acknowledgement(request, true, models.OutcomeApplied), nil
 }
@@ -243,12 +243,13 @@ func refusal(outcome models.Outcome, reason error) error {
 // contradicts the active generation under the same identifier. It is the whole
 // idempotency contract: a duplicate is acknowledged, a contradiction is refused.
 func (lifecycle *Lifecycle) settled(request models.Reload) (models.Reload, models.Outcome, bool) {
-	lifecycle.stateMu.RLock()
-	defer lifecycle.stateMu.RUnlock()
+	lifecycle.stateMu.Lock()
+	defer lifecycle.stateMu.Unlock()
 	if lifecycle.active == nil {
 		return models.Reload{}, "", false
 	}
 	if lifecycle.active.SameDescriptor(request) {
+		lifecycle.pending = ""
 		return *lifecycle.active, models.OutcomeAlreadyActive, true
 	}
 	if lifecycle.active.Generation == request.Generation {
@@ -261,6 +262,9 @@ func (lifecycle *Lifecycle) refuse(ctx context.Context, request models.Reload, o
 	lifecycle.stateMu.Lock()
 	lifecycle.pending = request.Generation
 	lifecycle.stateMu.Unlock()
+	if lifecycle.readiness != nil {
+		lifecycle.readiness.SetReady(false)
+	}
 	lifecycle.observe(ctx, KindReload, outcome)
 	return acknowledgement(request, false, outcome), refusal(outcome, reason)
 }

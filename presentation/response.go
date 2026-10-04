@@ -55,6 +55,19 @@ func (set *HandlerSet) writeTransportProblem(writer http.ResponseWriter, key str
 	set.writeDocument(writer, set.contracts.ContentTypes.JSON, problem.Status, contents)
 }
 
+// writeErrorProblem writes a contract error without inventing a lifecycle
+// outcome. Artifact callbacks may reject product metadata before accepting the
+// stream; the SDK publishes only the contract-owned status and code.
+func (set *HandlerSet) writeErrorProblem(writer http.ResponseWriter, key string) {
+	problem, ok := set.contracts.problem(key)
+	if !ok {
+		set.writeTransportProblem(writer, internalErrorKey)
+		return
+	}
+	contents, _ := json.Marshal(problemDocument{Code: problem.Code})
+	set.writeDocument(writer, set.contracts.ContentTypes.JSON, problem.Status, contents)
+}
+
 // writeOutcomeProblem answers a refusal that belongs to a lifecycle operation:
 // the contract outcome on the wire next to the status and code that outcome owns.
 // An outcome the contract registers no specific problem for, and an outcome

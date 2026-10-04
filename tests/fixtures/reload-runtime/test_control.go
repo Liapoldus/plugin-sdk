@@ -13,17 +13,27 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
 	"github.com/Liapoldus/plugin-sdk/domain/models"
 	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/presentation"
 )
 
 var errTestControl = errors.New("test control operation refused")
@@ -40,21 +50,30 @@ const testControlMaximumRequestBytes = 1 << 20
 // needs: the fixture Core replica, the Core-side plugin client, the plugin's
 // secret use case and the plugin's own applier state.
 type testControl struct {
-	core      *testCore
-	contract  infrastructure.HTTPContract
-	client    *infrastructure.PluginClient
-	secrets   *testSecrets
-	applier   *testApplier
-	scenarios *testScenarios
-	handler   http.Handler
+	core              *testCore
+	contract          infrastructure.HTTPContract
+	client            *infrastructure.PluginClient
+	secrets           *testSecrets
+	applier           *testApplier
+	scenarios         *testScenarios
+	artifacts         *testArtifactReceiver
+	adminActions      *testAdminActions
+	artifactStatus    *testArtifactStatusOverride
+	pluginCredentials *infrastructure.Credentials
+	pluginTLSURL      string
+	handler           http.Handler
 }
 
 // newTestControl builds the control mux.
 func newTestControl(core *testCore, contract infrastructure.HTTPContract,
 	client *infrastructure.PluginClient, secrets *testSecrets,
-	applier *testApplier, scenarios *testScenarios) *testControl {
+	applier *testApplier, scenarios *testScenarios, artifacts *testArtifactReceiver,
+	adminActions *testAdminActions, artifactStatus *testArtifactStatusOverride,
+	pluginCredentials *infrastructure.Credentials, pluginTLSURL string) *testControl {
 	control := &testControl{core: core, contract: contract, client: client,
-		secrets: secrets, applier: applier, scenarios: scenarios}
+		secrets: secrets, applier: applier, scenarios: scenarios,
+		artifacts: artifacts, adminActions: adminActions, artifactStatus: artifactStatus,
+		pluginCredentials: pluginCredentials, pluginTLSURL: pluginTLSURL}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+testRouteControlReload, control.handleReload)
 	mux.HandleFunc("POST "+testRouteControlPublish, control.handlePublish)
@@ -67,9 +86,452 @@ func newTestControl(core *testCore, contract infrastructure.HTTPContract,
 	mux.HandleFunc("POST "+testRouteControlConnections, control.handleConnections)
 	mux.HandleFunc("POST "+testRouteControlRotation, control.handleRotation)
 	mux.HandleFunc("POST "+testRouteControlLoad, control.handleLoad)
+	mux.HandleFunc("POST "+testRouteControlArtifactStream, control.handleArtifactStream)
+	mux.HandleFunc("POST "+testRouteControlArtifactProbes, control.handleArtifactProbes)
+	mux.HandleFunc("POST "+testRouteControlContractValidation, control.handleContractValidation)
+	mux.HandleFunc("POST "+testRouteControlAdminSurface, control.handleAdminSurface)
+	mux.HandleFunc("POST "+testRouteControlAdminAction, control.handleAdminAction)
+	mux.HandleFunc("POST "+testRouteControlAdminProbes, control.handleAdminActionProbes)
 	mux.HandleFunc("POST "+testRouteControlReconnect, control.handleReconnect)
 	control.handler = mux
 	return control
+}
+
+func (control *testControl) handleArtifactStream(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Bytes int64  `json:"bytes"`
+		Mode  string `json:"mode"`
+	}
+	if !control.decode(w, r, &request) || request.Bytes <= 0 || request.Bytes > 8<<20 {
+		control.fail(w, errTestControl)
+		return
+	}
+	metadata := []byte(`{"operation":"fixture"}`)
+	if request.Mode == "early" {
+		metadata = []byte(`{"mode":"early"}`)
+	}
+	invocation := models.ArtifactInvocation{
+		CallerID: "fixture-operator", InstanceID: testInstanceID, PageID: "sites",
+		ActionID: "publish", SurfaceDigest: "sha256:fixture-surface",
+		IdempotencyKey: "fixture-idempotency", RequestID: "fixture-request",
+		IfMatch: `"fixture-revision"`,
+	}
+	result, err := control.client.ArtifactStream(r.Context(), invocation, metadata, "application/gzip", io.NopCloser(&repeatedByteReader{remaining: request.Bytes}))
+	if err != nil {
+		control.write(w, http.StatusOK, map[string]any{"sdkError": true})
+		return
+	}
+	bytesRead, digest, observedMetadata, observedInvocation := control.artifacts.snapshot()
+	endpoint, err := control.contract.Endpoint("artifactStream")
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	anonymousRejected := control.rejectAnonymousArtifactCall(endpoint)
+	var receipt map[string]any
+	if json.Unmarshal(result.Body, &receipt) != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	control.write(w, http.StatusOK, map[string]any{
+		"status": result.StatusCode, "bytes": bytesRead, "sha256": digest,
+		"metadata": observedMetadata, "invocation": map[string]string{
+			"callerId": observedInvocation.CallerID, "instanceId": observedInvocation.InstanceID,
+			"pageId": observedInvocation.PageID, "actionId": observedInvocation.ActionID,
+			"surfaceDigest": observedInvocation.SurfaceDigest, "idempotencyKey": observedInvocation.IdempotencyKey,
+			"requestId": observedInvocation.RequestID, "ifMatch": observedInvocation.IfMatch,
+		},
+		"anonymousRejected": anonymousRejected, "receipt": receipt,
+		"generatedBytes": request.Bytes,
+		"sdkError":       false,
+	})
+}
+
+func (control *testControl) handleArtifactProbes(w http.ResponseWriter, r *http.Request) {
+	startCalls := control.artifacts.calls.Load()
+	wrongOrder := control.directArtifact([]testArtifactPart{
+		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
+		{name: "metadata", mediaType: "application/json", body: []byte(`{"mode":"normal"}`)},
+	})
+	withFilename := control.directArtifact([]testArtifactPart{
+		{name: "metadata", mediaType: "application/json", body: []byte(`{"mode":"normal"}`)},
+		{name: "artifact", filename: "payload.bin", mediaType: "application/gzip", body: []byte("x")},
+	})
+	withExtraPart := control.directArtifact([]testArtifactPart{
+		{name: "metadata", mediaType: "application/json", body: []byte(`{"mode":"normal"}`)},
+		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
+		{name: "extra", mediaType: "application/octet-stream", body: []byte("x")},
+	})
+	oversizedMetadata := []byte(`{"value":"` + strings.Repeat("a", int(control.contract.Plugin.ArtifactStream.MaximumMetadataBytes)-11) + `"}`)
+	metadataOverLimit := control.directArtifact([]testArtifactPart{
+		{name: "metadata", mediaType: "application/json", body: oversizedMetadata},
+		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
+	})
+	metadataAtLimit := []byte(`{"value":"` + strings.Repeat("a", int(control.contract.Plugin.ArtifactStream.MaximumMetadataBytes)-12) + `"}`)
+	metadataAtBoundary := control.directArtifact([]testArtifactPart{
+		{name: "metadata", mediaType: "application/json", body: metadataAtLimit},
+		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
+	})
+	callbackCallsAfterMalformed := control.artifacts.calls.Load() - startCalls
+
+	invocation := models.ArtifactInvocation{
+		CallerID: "fixture-operator", InstanceID: testInstanceID, PageID: "sites",
+		ActionID: "publish", SurfaceDigest: "sha256:fixture-surface",
+		IdempotencyKey: "fixture-idempotency", RequestID: "fixture-request",
+	}
+	earlyResult, earlyErr := control.client.ArtifactStream(r.Context(), invocation,
+		[]byte(`{"mode":"early"}`), "application/gzip", io.NopCloser(&repeatedByteReader{remaining: 4}))
+	earlyCallbackRejected := earlyErr != nil || earlyResult.StatusCode != control.contract.Plugin.ArtifactStream.AcceptedStatus
+
+	ctx, cancel := context.WithCancel(r.Context())
+	blocked := &testBlockingArtifact{started: make(chan struct{}), closed: make(chan struct{})}
+	cancelled := make(chan error, 1)
+	go func() {
+		_, err := control.client.ArtifactStream(ctx, invocation, []byte(`{"mode":"wait-cancel"}`), "application/gzip", blocked)
+		cancelled <- err
+	}()
+	select {
+	case <-control.artifacts.started:
+		cancel()
+	case <-time.After(2 * time.Second):
+		cancel()
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(3 * time.Second):
+		cancel()
+	}
+	cancellationObserved := control.artifacts.cancelled.Load()
+
+	control.artifactStatus.rewriteNext.Store(true)
+	_, invalidStatusErr := control.client.ArtifactStream(r.Context(), invocation,
+		[]byte(`{"mode":"normal"}`), "application/gzip", io.NopCloser(strings.NewReader("x")))
+	_, oversizedArtifactErr := control.client.ArtifactStream(r.Context(), invocation,
+		[]byte(`{"mode":"normal"}`), "application/gzip",
+		io.NopCloser(&repeatedByteReader{remaining: control.contract.Plugin.ArtifactStream.MaximumArtifactBytes + 1}))
+	control.write(w, http.StatusOK, map[string]any{
+		"wrongOrderStatus": wrongOrder.Status, "filenameStatus": withFilename.Status,
+		"extraPartStatus": withExtraPart.Status, "metadataOverLimitStatus": metadataOverLimit.Status,
+		"metadataBoundaryStatus": metadataAtBoundary.Status, "callbackCallsAfterMalformed": callbackCallsAfterMalformed,
+		"earlyCallbackRejected": earlyCallbackRejected, "cancellationObserved": cancellationObserved,
+		"artifactStatusRejected": invalidStatusErr != nil, "oversizedArtifactRejected": oversizedArtifactErr != nil,
+	})
+}
+
+func (control *testControl) handleContractValidation(w http.ResponseWriter, _ *http.Request) {
+	contracts, err := presentationContracts(control.contract)
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	contracts.AdminSurface.DigestAlgorithm = ""
+	err = contracts.Validate()
+	control.write(w, http.StatusOK, map[string]any{
+		"rejected": errors.Is(err, presentation.ErrInvalidContracts), "diagnostic": safeValidationMessage(err),
+	})
+}
+
+func safeValidationMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+type testArtifactPart struct {
+	name      string
+	filename  string
+	mediaType string
+	body      []byte
+}
+
+type testArtifactResult struct{ Status int }
+
+func (control *testControl) directArtifact(parts []testArtifactPart) testArtifactResult {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, part := range parts {
+		header := make(textproto.MIMEHeader)
+		disposition := `form-data; name="` + part.name + `"`
+		if part.filename != "" {
+			disposition += `; filename="` + part.filename + `"`
+		}
+		header.Set("Content-Disposition", disposition)
+		header.Set("Content-Type", part.mediaType)
+		created, err := writer.CreatePart(header)
+		if err != nil {
+			return testArtifactResult{}
+		}
+		if _, err := created.Write(part.body); err != nil {
+			return testArtifactResult{}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return testArtifactResult{}
+	}
+	endpoint, err := control.contract.Endpoint(testRouteArtifactStream)
+	if err != nil {
+		return testArtifactResult{}
+	}
+	base, err := url.Parse(control.pluginTLSURL)
+	if err != nil {
+		return testArtifactResult{}
+	}
+	base.Path = endpoint.Path
+	transport := &http.Transport{TLSClientConfig: &tls.Config{
+		Certificates: []tls.Certificate{mustTestClientCertificate(control.pluginCredentials)},
+		RootCAs:      control.pluginCredentials.TrustPool(), ServerName: testServerName,
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	request, err := http.NewRequest(http.MethodPost, base.String(), bytes.NewReader(body.Bytes()))
+	if err != nil {
+		return testArtifactResult{}
+	}
+	request.Header.Set("content-type", writer.FormDataContentType())
+	invocation := models.ArtifactInvocation{
+		CallerID: "fixture-operator", InstanceID: testInstanceID, PageID: "sites", ActionID: "publish",
+		SurfaceDigest: "sha256:fixture-surface", IdempotencyKey: "fixture-idempotency", RequestID: "fixture-request",
+	}
+	for logical, header := range control.contract.Plugin.ArtifactStream.InvocationContext.Headers {
+		value := map[string]string{
+			"callerId": invocation.CallerID, "instanceId": invocation.InstanceID,
+			"pageId": invocation.PageID, "actionId": invocation.ActionID,
+			"surfaceDigest": invocation.SurfaceDigest, "idempotencyKey": invocation.IdempotencyKey,
+			"requestId": invocation.RequestID,
+		}[logical]
+		if value != "" {
+			request.Header.Set(header, value)
+		}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return testArtifactResult{}
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, control.contract.Plugin.ArtifactStream.MaximumReceiptBytes+1))
+	return testArtifactResult{Status: response.StatusCode}
+}
+
+func mustTestClientCertificate(credentials *infrastructure.Credentials) tls.Certificate {
+	certificate, ok := credentials.ClientCertificate()
+	if !ok {
+		return tls.Certificate{}
+	}
+	return certificate
+}
+
+type testArtifactStatusOverride struct {
+	transport   *infrastructure.MutualTLSClient
+	rewriteNext atomic.Bool
+}
+
+func (transport *testArtifactStatusOverride) Do(request *http.Request) (*http.Response, error) {
+	return transport.transport.Do(request)
+}
+
+func (transport *testArtifactStatusOverride) DoAdminAction(request *http.Request) (*http.Response, error) {
+	return transport.transport.DoAdminAction(request)
+}
+
+func (transport *testArtifactStatusOverride) DoArtifact(request *http.Request) (*http.Response, error) {
+	response, err := transport.transport.DoArtifact(request)
+	if err == nil && response != nil && transport.rewriteNext.Swap(false) {
+		response.StatusCode = http.StatusFound
+	}
+	return response, err
+}
+
+func (transport *testArtifactStatusOverride) CloseIdleConnections() {
+	transport.transport.CloseIdleConnections()
+}
+
+type testBlockingArtifact struct {
+	started chan struct{}
+	closed  chan struct{}
+	once    sync.Once
+}
+
+func (reader *testBlockingArtifact) Read([]byte) (int, error) {
+	reader.once.Do(func() { close(reader.started) })
+	<-reader.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (reader *testBlockingArtifact) Close() error {
+	select {
+	case <-reader.closed:
+	default:
+		close(reader.closed)
+	}
+	return nil
+}
+
+func (control *testControl) handleAdminSurface(w http.ResponseWriter, r *http.Request) {
+	document, err := control.client.AdminSurface(r.Context())
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	endpoint, err := control.contract.Endpoint(testRouteAdminSurface)
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	control.write(w, http.StatusOK, map[string]any{
+		"descriptor": string(document.Bytes), "sha256": document.SHA256,
+		"anonymousRejected": control.rejectAnonymousArtifactCall(endpoint),
+	})
+}
+
+func (control *testControl) handleAdminAction(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		Mode string `json:"mode"`
+	}
+	if !control.decode(w, r, &request) {
+		return
+	}
+	input := []byte(`{"filter":{"site":"site-a"}}`)
+	if request.Mode != "normal" {
+		input, _ = json.Marshal(map[string]string{"mode": request.Mode})
+	}
+	invocation := fixtureAdminInvocation()
+	result, err := control.client.AdminAction(r.Context(), invocation, input)
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	control.write(w, http.StatusOK, map[string]any{
+		"statusCode": result.StatusCode, "body": string(result.Body), "input": string(input), "calls": control.adminActions.calls.Load(),
+		"invocation": map[string]string{
+			"callerId": invocation.CallerID, "instanceId": invocation.InstanceID, "pageId": invocation.PageID,
+			"actionId": invocation.ActionID, "surfaceDigest": invocation.SurfaceDigest, "requestId": invocation.RequestID,
+			"idempotencyKey": invocation.IdempotencyKey, "ifMatch": invocation.IfMatch,
+		},
+	})
+}
+
+func (control *testControl) handleAdminActionProbes(w http.ResponseWriter, r *http.Request) {
+	endpoint, err := control.contract.Endpoint(testRouteAdminAction)
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	base, err := url.Parse(control.pluginTLSURL)
+	if err != nil {
+		control.fail(w, errTestControl)
+		return
+	}
+	base.Path = endpoint.Path
+	base.Path = strings.Replace(base.Path, "{page}", "overview", 1)
+	base.Path = strings.Replace(base.Path, "{action}", "list", 1)
+	base.RawPath = ""
+	duplicate := control.adminDirect(base.String(), `{"mode":"normal"}`, true, map[string][]string{"Liapoldus-Caller": {"fixture-operator", "second"}})
+	unknown := control.adminDirect(base.String(), `{"mode":"normal"}`, true, map[string][]string{"Liapoldus-Unexpected": {"x"}})
+	callbackCalls := control.adminActions.calls.Load()
+	traversalURL := strings.Replace(control.pluginTLSURL+strings.Replace(endpoint.Path, "{page}", "%2e%2e", 1), "{action}", "list", 1)
+	traversal := control.adminDirect(traversalURL, `{"mode":"normal"}`, true, nil)
+	oversized := control.adminDirect(base.String(), strings.Repeat(" ", int(control.contract.Plugin.AdminAction.MaximumRequestBytes+1)), true, nil)
+	receipt := control.adminDirect(base.String(), `{"mode":"oversized-receipt"}`, true, nil)
+	handlerError := control.adminDirect(base.String(), `{"mode":"handler-error"}`, true, nil)
+	cancelContext, cancel := context.WithCancel(r.Context())
+	cancelled := make(chan struct{})
+	go func() {
+		defer close(cancelled)
+		_ = control.adminDirectContext(cancelContext, base.String(), `{"mode":"wait-cancel"}`, true, nil)
+	}()
+	select {
+	case <-control.adminActions.started:
+		cancel()
+	case <-time.After(2 * time.Second):
+		cancel()
+	}
+	<-cancelled
+	control.write(w, http.StatusOK, map[string]any{
+		"duplicateHeaderStatus": duplicate.Status, "unknownHeaderStatus": unknown.Status,
+		"pathTraversalStatus": traversal.Status, "callbackCalls": callbackCalls,
+		"anonymousRejected":       control.rejectAnonymousArtifactCall(endpoint),
+		"oversizedRequestRefused": oversized.Status == http.StatusRequestEntityTooLarge,
+		"oversizedReceiptStatus":  receipt.Status, "oversizedReceiptBody": receipt.Body,
+		"handlerErrorStatus": handlerError.Status, "handlerErrorBody": handlerError.Body,
+		"cancellationObserved": control.adminActions.cancelled.Load(),
+	})
+}
+
+type adminProbeResult struct {
+	Status int
+	Body   string
+}
+
+func fixtureAdminInvocation() models.AdminActionInvocation {
+	return models.AdminActionInvocation{CallerID: "fixture-operator", InstanceID: testInstanceID,
+		PageID: "overview", ActionID: "list", SurfaceDigest: "sha256:fixture-surface", RequestID: "fixture-request",
+		IdempotencyKey: "fixture-idempotency", IfMatch: `"fixture-surface"`}
+}
+
+func (control *testControl) adminDirect(rawURL, body string, authenticate bool, extra map[string][]string) adminProbeResult {
+	return control.adminDirectContext(context.Background(), rawURL, body, authenticate, extra)
+}
+
+func (control *testControl) adminDirectContext(ctx context.Context, rawURL, body string, authenticate bool, extra map[string][]string) adminProbeResult {
+	transport := &http.Transport{}
+	if authenticate {
+		certificate, ok := control.pluginCredentials.ClientCertificate()
+		if !ok {
+			return adminProbeResult{}
+		}
+		transport.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{certificate}, RootCAs: control.pluginCredentials.TrustPool(), ServerName: testServerName}
+	}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 4 * time.Second}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(body))
+	if err != nil {
+		return adminProbeResult{}
+	}
+	request.Header.Set("content-type", control.contract.Plugin.AdminAction.MediaType)
+	invocation := fixtureAdminInvocation()
+	for logical, header := range control.contract.Plugin.AdminAction.InvocationContext.Headers {
+		value := map[string]string{"callerId": invocation.CallerID, "instanceId": invocation.InstanceID, "pageId": invocation.PageID,
+			"actionId": invocation.ActionID, "surfaceDigest": invocation.SurfaceDigest, "requestId": invocation.RequestID,
+			"idempotencyKey": invocation.IdempotencyKey, "ifMatch": invocation.IfMatch}[logical]
+		if value != "" {
+			request.Header.Set(header, value)
+		}
+	}
+	for name, values := range extra {
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return adminProbeResult{}
+	}
+	defer response.Body.Close()
+	contents, _ := io.ReadAll(io.LimitReader(response.Body, control.contract.Plugin.AdminAction.MaximumResponseBytes+1))
+	return adminProbeResult{Status: response.StatusCode, Body: string(contents)}
+}
+
+func (control *testControl) rejectAnonymousArtifactCall(endpoint infrastructure.Endpoint) bool {
+	base, err := url.Parse(control.pluginTLSURL)
+	if err != nil {
+		return false
+	}
+	base.Path = endpoint.Path
+	transport := &http.Transport{TLSClientConfig: &tls.Config{
+		RootCAs: control.pluginCredentials.TrustPool(), ServerName: testServerName,
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+	request, err := http.NewRequest(http.MethodPost, base.String(), strings.NewReader(""))
+	if err != nil {
+		return false
+	}
+	response, err := client.Do(request)
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	return err != nil
 }
 
 // handleReload drives one Core-issued reload through the production plugin

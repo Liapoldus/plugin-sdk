@@ -164,6 +164,25 @@ describe("the exact-generation reload lifecycle", () => {
     expect(after.applyApplied).toBe(before.applyApplied);
   });
 
+  it("clears a refused pending generation when rollback reannounces the active descriptor", async () => {
+    const refusedGeneration = "generation-refused-before-rollback";
+    await runtime.publish({
+      generation: refusedGeneration,
+      rawJSON: fixture.document.wellFormed,
+      state: fixture.states.active,
+    });
+    await runtime.armPullFault(refusedGeneration, fixture.pullFaults.unavailable);
+    const refusal = await runtime.reloadViaCore({ ...active, generation: refusedGeneration });
+    expect(refusal.body[fixture.keys.outcome]).toBe("coreUnavailable");
+
+    const rollback = await runtime.reloadViaCore(active);
+    const readiness = bodyOf(await runtime.get(path("ready"), mediaType.readiness));
+
+    expect(rollback.body[fixture.keys.outcome]).toBe(identicalDescriptorRepeat);
+    expect(readiness[fixture.keys.generation]).toBe(active.generation);
+    expect(readiness[fixture.keys.pendingGeneration]).toBe("");
+  });
+
   it("refuses a descriptor that contradicts the active generation under the same name", async () => {
     const contradicted = { ...active, sha256: digestOf(fixture.document.corrupt) };
     const conflict = await runtime.reloadViaCore(contradicted);
@@ -182,7 +201,7 @@ describe("the exact-generation reload lifecycle", () => {
 
     expect(metrics.status).toBe(okStatus);
     expect(metrics.mediaType).toBe(metricsContractMediaType);
-    expect(text).toContain(`${metricsContract.readyMetricName} 1`);
+    expect(text).toContain(`${metricsContract.readyMetricName} 0`);
     expect(text).toContain(`${metricsContract.lifecycleCounterKindLabel}="reload"`);
     for (const outcome of [identicalDescriptorRepeat, contradictionOfActiveDescriptor]) {
       expect(text, `outcome ${outcome}`).toContain(
@@ -255,8 +274,8 @@ describe("a refusal of the exact-generation pull", () => {
     expect(refused.status).toBe(statusOfOutcome("coreUnavailable"));
     expect(refused.body[fixture.keys.outcome]).toBe("coreUnavailable");
     expect(refused.body[fixture.keys.applied]).toBe(false);
-    expect(ready.status).toBe(okStatus);
-    expect(document[fixture.keys.ready]).toBe(true);
+    expect(ready.status).toBe(error("notReady").status);
+    expect(document[fixture.keys.ready]).toBe(false);
     expect(document[fixture.keys.generation]).toBe(active.generation);
     expect(document[fixture.keys.sha256]).toBe(active.sha256);
     expect(document[fixture.keys.schemaVersion]).toBe(active.schemaVersion);

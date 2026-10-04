@@ -1,10 +1,12 @@
 # Liapoldus Plugin SDK
 
 Отдельный четырёхслойный Go-модуль общего REST lifecycle для plugin processes.
-Локальный SDK slice имеет зелёные unit/contract/security gates. Core уже содержит
-REST composition и per-replica clients, но активные Server и forms-db ещё не
-собираются против текущих SDK/protocol API; сквозная v1-интеграция не завершена.
-См. точный статус и remaining gates в [TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md).
+Текущий локальный SDK worktree проходит `make check` (14 файлов / 190 тестов),
+Go build/vet и child-process conformance. На 2026-10-04 Core, Server и forms-db
+также прошли локальные интеграционные gates с SDK; Core→Server→forms-db проверен
+на macOS и Linux/OrbStack, включая PostgreSQL, MySQL и MariaDB. Это не означает,
+что текущий WIP опубликован или проверен hosted CI. Оставшиеся внешние release
+gates перечислены в [TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md).
 
 ## Единственный источник contract
 
@@ -188,14 +190,10 @@ Canonical import path, утверждённый владельцем: `github.co
 
 ## Проверка
 
-`make check` запускает `npx vitest run`, `go build ./...` и `go vet ./...`.
-TypeScript conformance поднимает реальный mTLS child process, поэтому проверка
-требует локально установленного Go toolchain и Node; suite не заменяет
-интеграционные проверки в Core и продуктовых plugins. Исполняемый прогон
-выполнен на локальной macOS-машине; Linux-прогон не заявляется.
-
-Текущий suite — 10 файлов, 176 тестов. Среди них mTLS-границы против живого
-listener'а (revoked, wrong-identity, expired), ротация credentials на диске с
-проверкой нового serial на проводе, reconnect и close race под нагрузкой, а
-также graceful shutdown с запросом in flight. Открытые gates перечислены в
-[TODO.md](https://github.com/Liapoldus/plugin-sdk/blob/main/TODO.md): интеграция с Core и продуктовыми plugins и Linux-прогон.
+`make check` запускает TypeScript conformance, `go build ./...` и
+`go vet ./...`. TypeScript conformance поднимает реальные mTLS child processes,
+поэтому для него нужны Go toolchain и Node. На 2026-10-04 текущий локальный
+набор включает 14 файлов и 190 тестов; тот же suite прошёл в Ubuntu 24.04 ARM64
+VM под OrbStack. Сквозная интеграция дополнительно проверяется в Core и
+продуктовых plugins; локальный PASS не заменяет hosted CI на согласованных
+опубликованных revisions и release provenance.

@@ -47,6 +47,9 @@
       "health": { "method": "GET", "path": "/_liapoldus/v1/health" },
       "ready": { "method": "GET", "path": "/_liapoldus/v1/ready" },
       "reload": { "method": "POST", "path": "/_liapoldus/v1/reload" },
+      "artifactStream": { "method": "POST", "path": "/_liapoldus/v1/artifact-stream" },
+      "adminSurface": { "method": "GET", "path": "/_liapoldus/v1/admin-surface" },
+      "adminAction": { "method": "POST", "path": "/_liapoldus/v1/admin-action/{page}/{action}" },
       "metrics": { "method": "GET", "path": "/_liapoldus/v1/metrics" }
     },
     "reloadRequest": {
@@ -72,7 +75,67 @@
       "mediaType": "application/json",
       "maximumBytes": 262144
     },
-    "maximumMetadataBytes": 262144
+    "maximumMetadataBytes": 262144,
+    "artifactStream": {
+      "mediaType": "multipart/form-data",
+      "metadataMediaType": "application/json",
+      "parts": ["metadata", "artifact"],
+      "partOrder": ["metadata", "artifact"],
+      "maximumArtifactBytes": 134217728,
+      "minimumArtifactBytes": 1,
+      "maximumMetadataBytes": 65536,
+      "maximumMultipartOverheadBytes": 65536,
+      "maximumRequestBytes": 134348800,
+      "maximumReceiptBytes": 4096,
+      "acceptedStatus": 202,
+      "filenameForwarded": false,
+      "invocationContext": {
+        "maximumBytes": 8192,
+        "required": ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "idempotencyKey", "requestId"],
+        "optional": ["ifMatch"],
+        "headers": {
+          "callerId": "Liapoldus-Caller",
+          "instanceId": "Liapoldus-Instance",
+          "pageId": "Liapoldus-Page",
+          "actionId": "Liapoldus-Action",
+          "surfaceDigest": "Liapoldus-Surface-Digest",
+          "idempotencyKey": "Idempotency-Key",
+          "requestId": "Liapoldus-Request-ID",
+          "ifMatch": "If-Match"
+        }
+      }
+    },
+    "adminSurface": {
+      "mediaType": "application/json",
+      "maximumBytes": 262144,
+      "digestAlgorithm": "SHA-256"
+    },
+    "adminAction": {
+      "mediaType": "application/json",
+      "maximumRequestBytes": 1048576,
+      "maximumResponseBytes": 1048576,
+      "maximumPageIdBytes": 128,
+      "maximumActionIdBytes": 128,
+      "pathSegmentPattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$",
+      "responseStatus": { "minimum": 200, "maximum": 599 },
+      "deadlineSeconds": 30,
+      "invocationContext": {
+        "maximumBytes": 8192,
+        "unknownHeaderPrefix": "Liapoldus-",
+        "required": ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "requestId"],
+        "optional": ["idempotencyKey", "ifMatch"],
+        "headers": {
+          "callerId": "Liapoldus-Caller",
+          "instanceId": "Liapoldus-Instance",
+          "pageId": "Liapoldus-Page",
+          "actionId": "Liapoldus-Action",
+          "surfaceDigest": "Liapoldus-Surface-Digest",
+          "requestId": "Liapoldus-Request-ID",
+          "idempotencyKey": "Idempotency-Key",
+          "ifMatch": "If-Match"
+        }
+      }
+    }
   },
   "core": {
     "configPull": {
@@ -217,7 +280,8 @@
     "pluginIdleSeconds": 120,
     "pluginShutdownGraceSeconds": 20,
     "clientResponseHeaderSeconds": 10,
-    "clientDialSeconds": 10
+    "clientDialSeconds": 10,
+    "artifactStreamSeconds": 600
   },
   "logging": {
     "stream": "stdout",

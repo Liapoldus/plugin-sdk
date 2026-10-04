@@ -363,6 +363,42 @@ func performControlCall(transport ControlTransport, request *http.Request, kind 
 	}
 }
 
+func performArtifactControlCall(transport ArtifactControlTransport, request *http.Request) (*http.Response, error) {
+	if transport == nil || request == nil {
+		return nil, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	response, err := transport.DoArtifact(request)
+	if err == nil && response != nil {
+		return response, nil
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(request.Context().Err(), context.DeadlineExceeded):
+		return nil, controlFailure(controlCallReload, models.OutcomeDeadlineExceeded, ErrControlTransportFailed)
+	case errors.Is(err, context.Canceled) || errors.Is(request.Context().Err(), context.Canceled):
+		return nil, controlFailure(controlCallReload, models.OutcomeCancelled, ErrControlTransportFailed)
+	default:
+		return nil, controlUnusable(controlCallReload, ErrControlTransportFailed)
+	}
+}
+
+func performAdminActionControlCall(transport AdminActionControlTransport, request *http.Request) (*http.Response, error) {
+	if transport == nil || request == nil {
+		return nil, controlUnusable(controlCallReload, ErrInvalidControlCall)
+	}
+	response, err := transport.DoAdminAction(request)
+	if err == nil && response != nil {
+		return response, nil
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(request.Context().Err(), context.DeadlineExceeded):
+		return nil, controlFailure(controlCallReload, models.OutcomeDeadlineExceeded, ErrControlTransportFailed)
+	case errors.Is(err, context.Canceled) || errors.Is(request.Context().Err(), context.Canceled):
+		return nil, controlFailure(controlCallReload, models.OutcomeCancelled, ErrControlTransportFailed)
+	default:
+		return nil, controlUnusable(controlCallReload, ErrControlTransportFailed)
+	}
+}
+
 // requireControlRequestSize refuses a request body the contract would not accept
 // before it is sent, so an oversized call never reaches a peer.
 func requireControlRequestSize(contents []byte, maximum int64) error {

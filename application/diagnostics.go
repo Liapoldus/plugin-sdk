@@ -49,8 +49,9 @@ type MetricsSink interface {
 }
 
 // ReadinessObserver is the optional port an observer implements to also publish
-// the replica readiness gauge. The SDK sets it once, on the first successful
-// apply, and never clears it: a refusal keeps the applied configuration active.
+// the replica readiness gauge. The SDK updates it when an active generation
+// becomes eligible, when a reload refusal fences the replica, and when an
+// idempotent announcement clears that pending refusal.
 type ReadinessObserver interface {
 	// SetReady publishes the readiness of this replica.
 	SetReady(ready bool)

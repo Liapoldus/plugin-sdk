@@ -42,13 +42,80 @@ describe("the versioned HTTP contract asset", () => {
 
     expect(new Set(paths).size).toBe(paths.length);
     expect(new Set(pairs).size).toBe(pairs.length);
-    expect(writes, "the plugin publishes exactly one write path").toHaveLength(1);
+    expect(writes, "the plugin publishes lifecycle, artifact, and admin action write paths").toHaveLength(3);
     for (const [index, name] of endpointNames.entries()) {
       expect(pairs[index], `method of ${name}`).toMatch(
         new RegExp(`^${httpMethods.join("|")} /`),
       );
       expect(paths[index], `path of ${name}`).not.toContain(" ");
     }
+  });
+
+  it("publishes the bounded artifact stream endpoint and envelope contract", () => {
+    const endpoint = contract.plugin.endpoints.artifactStream;
+    const stream = contract.plugin.artifactStream;
+
+    expect(endpoint).toEqual({ method: "POST", path: expect.stringMatching(/^\/_liapoldus\/v1\//) });
+    expect(stream).toMatchObject({
+      mediaType: "multipart/form-data",
+      parts: ["metadata", "artifact"],
+      partOrder: ["metadata", "artifact"],
+      maximumArtifactBytes: 134217728,
+      maximumMetadataBytes: 65536,
+      maximumMultipartOverheadBytes: 65536,
+      maximumRequestBytes: 134348800,
+      maximumReceiptBytes: expect.any(Number),
+      acceptedStatus: 202,
+      filenameForwarded: false,
+      invocationContext: {
+        maximumBytes: 8192,
+        required: ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "idempotencyKey", "requestId"],
+        optional: ["ifMatch"],
+        headers: {
+          callerId: "Liapoldus-Caller",
+          instanceId: "Liapoldus-Instance",
+          pageId: "Liapoldus-Page",
+          actionId: "Liapoldus-Action",
+          surfaceDigest: "Liapoldus-Surface-Digest",
+          idempotencyKey: "Idempotency-Key",
+          requestId: "Liapoldus-Request-ID",
+          ifMatch: "If-Match",
+        },
+      },
+    });
+    expect(stream.maximumRequestBytes).toBe(
+      stream.maximumArtifactBytes + stream.maximumMetadataBytes + stream.maximumMultipartOverheadBytes,
+    );
+  });
+
+  it("publishes bounded, generic admin surface discovery and action contracts", () => {
+    expect(contract.plugin.endpoints.adminSurface).toEqual({
+      method: "GET",
+      path: "/_liapoldus/v1/admin-surface",
+    });
+    expect(contract.plugin.endpoints.adminAction).toEqual({
+      method: "POST",
+      path: "/_liapoldus/v1/admin-action/{page}/{action}",
+    });
+    expect(contract.plugin.adminSurface).toMatchObject({
+      mediaType: mediaType.json,
+      maximumBytes: 262144,
+      digestAlgorithm: "SHA-256",
+    });
+    expect(contract.plugin.adminAction).toMatchObject({
+      mediaType: mediaType.json,
+      maximumRequestBytes: 1048576,
+      maximumResponseBytes: 1048576,
+      deadlineSeconds: expect.any(Number),
+      pathSegmentPattern: expect.any(String),
+      invocationContext: {
+        maximumBytes: 8192,
+        required: ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "requestId"],
+        optional: ["idempotencyKey", "ifMatch"],
+        unknownHeaderPrefix: expect.any(String),
+      },
+      responseStatus: { minimum: 200, maximum: 599 },
+    });
   });
 
   it("declares a single media type per document and one usable value for each", () => {

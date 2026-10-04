@@ -35,9 +35,12 @@ generation и digest.
 Для instance поддерживаются ровно два durable слота `active`, `previous`.
 После validation одна SQLite-транзакция сохраняет candidate как `active`, бывший
 `active` как `previous` и удаляет прежний `previous`. Частичный rollout идёт только
-вперёд: готовые replicas обслуживают новый `active`, отставшие fenced/degraded и
-повторно получают Reload; трафик допускается только к replicas с нужным
-generation. Rollback — Core Management API operation: Core меняет
+вперёд: готовые replicas обслуживают новый `active`, отставшие остаются
+fenced/degraded, а трафик допускается только к replicas с нужным generation.
+Core выполняет reconciliation один раз при старте; работающий Core может только
+наблюдать readiness и не повторяет `Reload` в фоне. После ручного восстановления
+plugin оператор проверяет его health и перезапускает Core, чтобы запустить
+startup reconciliation. Rollback — Core Management API operation: Core меняет
 `active`/`previous` и вызывает обычный REST
 `Reload(generation)`; отдельной plugin rollback command нет. Неответившие
 replicas остаются fenced до ACK. См. [state machine Core](../core/architecture/control-plane).
@@ -64,7 +67,7 @@ binary. Core регистрирует и обслуживает fixed REST endpo
 
 ## Общие библиотеки и границы
 
-Каноническая ответственность и ещё не закрытые migration gates приведены в
+Каноническая ответственность и актуальные v1 conformance/release gates приведены в
 [документе Plugin SDK и protocol](../core/architecture/protocol). `pluginprotocol`
 регистрирует только произвольные application-level names, которые определяют
 сами participating plugins; физический carrier/security profile настраивается
@@ -72,7 +75,8 @@ binary. Core регистрирует и обслуживает fixed REST endpo
 защищённой связи. Core REST имеет отдельные trust roots и identities.
 
 Health/readiness не становится `Ready`, пока конкретная replica не подтвердила
-актуальные config и peer-policy generations. Неизвестный результат plugin Call
+актуальное поколение plugin configuration. Peer-policy generations не входят в
+v1. Неизвестный результат plugin Call
 не повторяется автоматически; оборванный Stream закрывается. Публичная матрица
 runtime-доказательств — [Core acceptance](../core/configuration/acceptance).
 

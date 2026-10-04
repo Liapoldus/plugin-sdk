@@ -1,5 +1,18 @@
 # TODO — Plugin SDK v1
 
+## Повторная проверка — 2026-10-04
+
+Текущий worktree: `make check` прошёл (14 файлов / 190 тестов),
+`GOWORK=off go build ./...`, `GOWORK=off go vet ./...` и
+`git diff --check` прошли. Hosted CI и опубликованные module versions остаются
+release gates.
+
+Дополнительная Linux-проверка 2026-10-04: в Ubuntu 24.04.5 ARM64 VM под
+OrbStack повторно прошёл `make check` (14 файлов / 190 тестов), включая Go
+build/vet. Это Linux VM runtime evidence; hosted CI и опубликованные module
+versions по-прежнему не подтверждены. Отдельный bare-metal host не требуется
+для v1 Linux runtime gate.
+
 ## Документация
 
 - [x] Общие Plugin SDK/lifecycle/Admin Surface Markdown и Mermaid исходники
@@ -7,6 +20,23 @@
   ревизию, не поддерживая редактируемую копию.
 - [ ] После изменения owner docs обновить pin в
   `liapoldus.github.io/docs-sources.json` и проверить единый сайт.
+
+## Актуальная проверка — 2026-10-02
+
+Дополнение 2026-10-03: повторное объявление уже активного поколения после
+отказанного candidate очищает `pendingGeneration`; целевой
+`tests/integration/reload-lifecycle.test.ts` прошёл 26/26. Полный SDK gate
+после этой правки прошёл: `make check` 14 файлов / 190 тестов,
+`go build ./...` и `go vet ./...`.
+
+`make check` прошёл: 14 Vitest files / 189 tests, включая artifact streaming и
+Admin Action suites; Go build и vet прошли;
+`GOWORK=off go vet ./...` и `git diff --check` также PASS. Настоящий
+Core→Server/forms-db child-process smoke пройден. Ранее приведённые в этом
+файле ошибки consumer-компиляции и незакрытый Core integration gate относятся
+к устаревшему состоянию и не являются текущими TODO. На момент этой проверки
+оставались Linux runtime, hosted CI, опубликованные module versions и общий
+release gate; актуальная Linux-проверка 2026-10-04 зафиксирована выше.
 
 Нормативная цель: [Core target](https://liapoldus.github.io/core/architecture/target),
 [v1 acceptance](https://liapoldus.github.io/core/configuration/acceptance) и
@@ -106,7 +136,9 @@ schema не копируются hardcode-строками по consumers.
   Политика `Lifecycle.Reload` (синтаксис → idempotent repeat → conflict →
   pull → desired-state → digest/schema → applier); предыдущая конфигурация
   остаётся рабочей при отказе; readiness не подтверждает отказанное поколение,
-  а публикует его в `pendingGeneration`. Evidence: «applies the announced
+  а публикует его в `pendingGeneration` и отвечает `notReady` до успешного
+  повторного Reload/идемпотентного объявления active поколения. Evidence:
+  «applies the announced
   generation and only then acknowledges it», «acknowledges a byte-for-byte
   repeat of the active descriptor without pulling», «refuses a descriptor that
   contradicts the active generation under the same name», «refuses a document
@@ -114,6 +146,8 @@ schema не копируются hardcode-строками по consumers.
   replica with the generation it refused, without claiming it», «keeps the
   applied generation usable through every pull refusal», «answers every outcome
   the contract names for reload» (15 outcomes, у каждого свой status и код).
+  После rollback idempotent reannouncement активного descriptor очищает
+  `pendingGeneration`; это закреплено отдельным TypeScript regression test.
 - [x] Generic scoped secret retrieval. `SecretManager.IssueGrant`, `Redeem`,
   `SecretProvider`; grant ограничен instance/replica, применённым generation;
   внутри `ConfigurationApplier.Apply` разрешён только обрабатываемый candidate
@@ -135,17 +169,22 @@ schema не копируются hardcode-строками по consumers.
   answers a pull Core cancels», «reports deadlineExceeded», «reports
   coreUnavailable», «never applies a generation a refused request announced»,
   «keeps the applied generation usable through every pull refusal».
-- [ ] Добавить отдельный mTLS REST streaming endpoint для bounded artifact
-  transfer Core→plugin. Это технический lifecycle/control transport, не
-  `pluginprotocol` peer method: потоковая передача metadata и одного artifact,
+- [x] Добавить отдельный mTLS REST streaming endpoint для bounded artifact
+  transfer Core→plugin. SDK передаёт metadata и один artifact с
   cancellation/backpressure, digest/byte limits и typed receipt; product
-  archive/site validation принадлежит Server plugin. Зафиксировать контракт
-  сначала в SDK и проверить реальным Core→SDK→Server child-process тестом.
-- [ ] Опубликовать и реализовать общий SDK REST контракт Admin Surface
+  archive/site validation принадлежит Server plugin. Проверено SDK
+  `artifact-stream.test.ts` и реальным Core→SDK→Server child-process publish:
+  multipart без `If-Match` для первой публикации, receipt `202`, durable
+  operation, serving опубликованного сайта и сохранность после Server restart.
+- [x] Опубликовать и реализовать общий SDK REST контракт Admin Surface
   discovery/action delivery, включая mTLS identity, bounds и typed errors.
   Product pages/actions/schema принадлежат plugins; удалённый
-  `pluginprotocol/contracts/admin-ui` не восстанавливать. Core Management API
-  может лишь аутентифицированно маршрутизировать и аудировать этот контракт.
+  `pluginprotocol/contracts/admin-ui` не восстанавливался. Проверено SDK
+  `admin-surface-actions.test.ts` и Core→Server forwarding suites. Для
+  синхронных JSON Actions SDK передаёт `Idempotency-Key` как opaque correlation
+  metadata и не кеширует результат; повторное выполнение, CAS и domain effects
+  принадлежат Core/plugin контрактам. Artifact actions используют отдельную
+  durable operation idempotency модель.
 
 ## P1 — plugin author experience и observability
 
@@ -231,31 +270,30 @@ schema не копируются hardcode-строками по consumers.
   the tests own out of the production tree», «imports only the four layers and
   the standard library from production code»), «serves the replica's own
   surface on a separate plaintext test mirror only».
-- [ ] Завершить сквозную интеграцию SDK с Core, Server и forms-db. Core уже
-  содержит REST composition/per-replica clients; `core make check` и Core
-  `go vet ./...` прошли 2026-09-30. Это не закрывает consumer migration:
-  текущий `go test ./server/... ./forms-db/...` падает из-за оставшихся импортов
-  удалённых `pluginprotocol/pluginv1` и `pluginprotocol/presentation/sdk`; Server
-  дополнительно содержит REST adapter, который не компилируется с публичным SDK
-  API (`ServerConfiguration`, route/error mapping и `NewLifecycle` signature).
-  Не оставлять permanent gRPC/REST dual mode. Тестовый дубль маршрута удалён
-  в том же coordinated change: `legacyReload` и
-  `testRouteLegacyReload` не имели ни одного consumer во всём workspace — ни
-  один тест в SDK, `core` или `liapoldus.github.io` к ним не обращался, — и
-  больше не существуют; зарегистрирован единственный путь `control.reload`.
-  Требуемый результат — реально собираемые consumers и Core→SDK→Server/forms-db
-  child-process smoke, а не только SDK и Core unit/contract gates.
-- [ ] Проверить macOS и Linux вручную запускаемые plugins. Исполняемый suite
-  прогнан на локальной macOS-машине; Linux-доказательств нет, поэтому заявлять
-  обе платформы нельзя. Заявление о platform coverage появится только вместе с
-  исполняемым прогоном. В v1 binaries устанавливает и запускает оператор: SDK
-  не управляет process lifecycle и не обращается к container API.
+- [x] Завершить сквозную интеграцию SDK с Core, Server и forms-db. На 2026-10-02
+  Core, Server и forms-db suites проходят; Core→Server/forms-db child-process
+  smoke проверяет настоящий SDK REST/mTLS, exact pull/ACK, Server traffic,
+  rollback, artifact publish и persistence после рестартов. Повторный Linux
+  runtime suite и прямой production E2E прошли в Ubuntu guest под OrbStack;
+  hosted CI остаётся отдельным gate.
+  Удалённый `pluginprotocol/pluginv1` lifecycle не восстановлен; `control.reload`
+  остаётся единственным plugin reload route.
+- [x] Проверены вручную запускаемые plugins на macOS и в Linux VM runtime:
+  Core→Server/forms-db child-process E2E прошёл на обеих средах, включая Linux
+  guest под OrbStack. В v1 binaries
+  устанавливает и запускает оператор; SDK не управляет process lifecycle и не
+  обращается к container API.
 - [x] Перевести `go.mod`, SDK, Core и Server imports на утверждённый
   `github.com/Liapoldus/plugin-sdk`; локальные SDK/Core builds проходят.
 - [x] Подключить forms-db к SDK: `go build ./...`, `go vet ./...` и plugin
   TypeScript suite прошли 2026-10-01; child-process SDK REST/mTLS и прямой
   Server→forms-db peer/HTTP маршрут подтверждены тестом с двумя процессами.
-- [ ] Проверить license/CI и настоящий Core→оба plugins smoke до публикации.
+- [x] License metadata: root `LICENSE` declares MIT; the module has no external
+  Go module requirements, so there is no separate dependency-license inventory
+  for this SDK module.
+- [ ] Hosted CI на согласованной опубликованной ревизии и release provenance.
+  Локальные suites и integration smoke зелёные; remote CI не проверен и не
+  объявляется пройденным.
 
 ## Отложено до v2: embedding и in-process adapter
 
@@ -276,22 +314,16 @@ schema не копируются hardcode-строками по consumers.
 
 ## Definition of Done
 
-Проверка 2026-09-30 на локальной macOS. `make check` проходит целиком: `npx vitest run`
-— 10 файлов, 176 тестов (layers 3, contract 20, source-of-truth 14, security 16,
-secrets 18, reload-lifecycle 25, reload-pull 73, credentials-rotation 3,
-connection-recovery 3, graceful-shutdown 1), затем `go build ./...` и
-`go vet ./...` без ошибок; `staticcheck ./...` не находит замечаний и
-`gofmt -l .` пуст. Исполняемый прогон — локальная macOS-машина.
+Проверка 2026-10-02 на macOS: `make check` — 14 Vitest files / 189 tests,
+`go build ./...` и `go vet ./...`; отдельный `GOWORK=off go vet ./...` тоже
+проходит. Актуальный набор 14 файлов / 190 тестов и Linux VM runtime повторно
+проверены 2026-10-04; hosted CI остаётся открытым.
 
 SDK остаётся product-agnostic, не зависит от `pluginprotocol` и не содержит
-второй lifecycle-модели: production-дерево проверено на отсутствие
-plugin-side rollback, ровно один `Reload` use case, ровно один reload handler и
-ноль product-specific строк.
+второй lifecycle-модели. Пройденные lifecycle/mTLS проверки подтверждают отказ
+для anonymous, wrong-identity, revoked и expired credentials; секреты не
+возвращаются в fixtures, логах, errors, metrics и ACK.
 
-Открытые gates, которые не дают объявить SDK production-ready: P2.3
-(интеграция с Core, `plugins/server` и `plugins/forms-db` по их owner tasks),
-P2.4 (Linux-прогон) и настоящий Core→plugins smoke. P2.1
-закрыт: пять сценариев исполняются против живого процесса, и нетавтологичность
-каждой mTLS-проверки подтверждена подстановкой живого credential. Секретов в fixtures, логах, errors, metrics и ACK нет;
-временные credentials фикстуры — test-only и не являются credentials
-эксплуатируемого развёртывания.
+Открыты deployment/release gates: hosted CI, непубликовавшиеся canonical
+module versions и координация v1 release всех потребителей. Linux VM runtime
+проверен в OrbStack; V2 embedding/in-process adapter не входит в v1 readiness.

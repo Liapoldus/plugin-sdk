@@ -11,6 +11,7 @@ package main
 // never parses the asset itself.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/Liapoldus/plugin-sdk/domain/models"
 	"github.com/Liapoldus/plugin-sdk/infrastructure"
@@ -119,6 +122,51 @@ func (testMetadata) ConfigurationSchema(context.Context) ([]byte, error) {
 	return []byte(testSchemaDocument), nil
 }
 
+type testAdminMetadata struct{}
+
+func (testAdminMetadata) AdminSurface(context.Context) ([]byte, error) {
+	return []byte(`{"version":1,"pages":[{"id":"overview"}]}`), nil
+}
+
+type testAdminActions struct {
+	calls     atomic.Int64
+	cancelled atomic.Bool
+	started   chan struct{}
+	startOnce sync.Once
+}
+
+func (actions *testAdminActions) HandleAdminAction(ctx context.Context, input presentation.AdminActionInput) (presentation.AdminActionResponse, error) {
+	actions.calls.Add(1)
+	var request struct {
+		Mode string `json:"mode"`
+	}
+	_ = json.Unmarshal(input.Body, &request)
+	switch request.Mode {
+	case "handler-error":
+		return presentation.AdminActionResponse{}, errors.New("secret-payload should be redacted")
+	case "oversized-receipt":
+		return presentation.AdminActionResponse{StatusCode: 200, Body: bytes.Repeat([]byte("secret-payload"), 100000)}, nil
+	case "slow":
+		timer := time.NewTimer(11 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return presentation.AdminActionResponse{StatusCode: 207, Body: []byte(`{"items":[{"id":"record-1"}]}`)}, nil
+		case <-ctx.Done():
+			return presentation.AdminActionResponse{}, ctx.Err()
+		}
+	case "wait-cancel":
+		if actions.started != nil {
+			actions.startOnce.Do(func() { close(actions.started) })
+		}
+		<-ctx.Done()
+		actions.cancelled.Store(true)
+		return presentation.AdminActionResponse{}, ctx.Err()
+	default:
+		return presentation.AdminActionResponse{StatusCode: 207, Body: []byte(`{"items":[{"id":"record-1"}]}`)}, nil
+	}
+}
+
 // testMetricsSink is the plugin author's bridge from the application recorder to
 // the infrastructure exposition. The application layer counts a bounded event;
 // the infrastructure collector renders it in the contract exposition format. The
@@ -169,15 +217,18 @@ func presentationContracts(contract infrastructure.HTTPContract) (presentation.C
 	// Every registered route must be served by exactly one handler field, so a
 	// contract that grows a route this fixture does not serve is a startup error
 	// rather than a silent 404.
-	served := make(map[string]presentation.Endpoint, 7)
+	served := make(map[string]presentation.Endpoint, 8)
 	for name, endpoint := range map[string]presentation.Endpoint{
-		testRouteIdentity:     routes[testRouteIdentity],
-		testRouteManifest:     routes[testRouteManifest],
-		testRouteConfigSchema: routes[testRouteConfigSchema],
-		testRouteHealth:       routes[testRouteHealth],
-		testRouteReady:        routes[testRouteReady],
-		testRouteReload:       routes[testRouteReload],
-		testRouteMetrics:      routes[testRouteMetrics],
+		testRouteIdentity:       routes[testRouteIdentity],
+		testRouteManifest:       routes[testRouteManifest],
+		testRouteConfigSchema:   routes[testRouteConfigSchema],
+		testRouteHealth:         routes[testRouteHealth],
+		testRouteReady:          routes[testRouteReady],
+		testRouteReload:         routes[testRouteReload],
+		testRouteArtifactStream: routes[testRouteArtifactStream],
+		testRouteAdminSurface:   routes[testRouteAdminSurface],
+		testRouteAdminAction:    routes[testRouteAdminAction],
+		testRouteMetrics:        routes[testRouteMetrics],
 	} {
 		if endpoint.Path == "" {
 			return presentation.Contracts{}, fmt.Errorf("%w: %s", errTestRoute, name)
@@ -197,29 +248,71 @@ func presentationContracts(contract infrastructure.HTTPContract) (presentation.C
 
 	plugin := contract.Plugin
 	contracts := presentation.Contracts{
-		ContractVersion:       contract.ContractVersion,
-		IdentityEndpoint:      served[testRouteIdentity],
-		ManifestEndpoint:      served[testRouteManifest],
-		ConfigSchemaEndpoint:  served[testRouteConfigSchema],
-		HealthEndpoint:        served[testRouteHealth],
-		ReadyEndpoint:         served[testRouteReady],
-		ReloadEndpoint:        served[testRouteReload],
-		MetricsEndpoint:       served[testRouteMetrics],
-		HealthStatus:          plugin.Responses.Health.Status,
-		HealthBody:            plugin.Responses.Health.Body,
-		ContentTypes:          presentation.ContentTypes{JSON: plugin.Responses.ContentTypes.JSON, Metrics: plugin.Responses.ContentTypes.Metrics},
-		ReloadRequest:         testDocument(plugin.ReloadRequest),
-		ReloadAcknowledgement: testDocument(plugin.ReloadAcknowledgement),
-		Readiness:             testDocument(plugin.Readiness),
-		Manifest:              testDocument(plugin.Manifest),
-		ConfigurationSchema:   testDocument(plugin.ConfigurationSchema),
-		Registration:          testDocument(infrastructure.DocumentContract{MediaType: contract.Identity.Registration.MediaType, MaximumBytes: contract.Identity.Registration.MaximumBytes, Required: contract.Identity.Registration.Required}),
-		MaximumMetadataBytes:  plugin.MaximumMetadataBytes,
-		ReadinessDeadline:     testSeconds(contract.Deadlines.PluginReadinessSeconds),
-		Problems:              problems,
-		Errors:                errorTable,
-		OutcomeProblems:       contract.OutcomeProblems,
-		SuccessOutcomes:       contract.SuccessOutcomes,
+		ContractVersion:        contract.ContractVersion,
+		IdentityEndpoint:       served[testRouteIdentity],
+		ManifestEndpoint:       served[testRouteManifest],
+		ConfigSchemaEndpoint:   served[testRouteConfigSchema],
+		HealthEndpoint:         served[testRouteHealth],
+		ReadyEndpoint:          served[testRouteReady],
+		ReloadEndpoint:         served[testRouteReload],
+		ArtifactStreamEndpoint: served[testRouteArtifactStream],
+		AdminSurfaceEndpoint:   served[testRouteAdminSurface],
+		AdminActionEndpoint:    served[testRouteAdminAction],
+		MetricsEndpoint:        served[testRouteMetrics],
+		HealthStatus:           plugin.Responses.Health.Status,
+		HealthBody:             plugin.Responses.Health.Body,
+		ContentTypes:           presentation.ContentTypes{JSON: plugin.Responses.ContentTypes.JSON, Metrics: plugin.Responses.ContentTypes.Metrics},
+		ReloadRequest:          testDocument(plugin.ReloadRequest),
+		ReloadAcknowledgement:  testDocument(plugin.ReloadAcknowledgement),
+		Readiness:              testDocument(plugin.Readiness),
+		Manifest:               testDocument(plugin.Manifest),
+		ConfigurationSchema:    testDocument(plugin.ConfigurationSchema),
+		AdminSurface:           testDocument(plugin.AdminSurface),
+		AdminAction: presentation.AdminActionContract{
+			MediaType:            plugin.AdminAction.MediaType,
+			MaximumRequestBytes:  plugin.AdminAction.MaximumRequestBytes,
+			MaximumResponseBytes: plugin.AdminAction.MaximumResponseBytes,
+			MaximumPageIDBytes:   plugin.AdminAction.MaximumPageIDBytes,
+			MaximumActionIDBytes: plugin.AdminAction.MaximumActionIDBytes,
+			PathSegmentPattern:   plugin.AdminAction.PathSegmentPattern,
+			ResponseStatus:       presentation.StatusRangeContract{Minimum: plugin.AdminAction.ResponseStatus.Minimum, Maximum: plugin.AdminAction.ResponseStatus.Maximum},
+			Deadline:             testSeconds(plugin.AdminAction.DeadlineSeconds),
+			InvocationContext: presentation.AdminInvocationContract{
+				MaximumBytes:        plugin.AdminAction.InvocationContext.MaximumBytes,
+				UnknownHeaderPrefix: plugin.AdminAction.InvocationContext.UnknownHeaderPrefix,
+				Required:            plugin.AdminAction.InvocationContext.Required,
+				Optional:            plugin.AdminAction.InvocationContext.Optional,
+				Headers:             plugin.AdminAction.InvocationContext.Headers,
+			},
+		},
+		ArtifactStream: presentation.ArtifactStreamContract{
+			MediaType:                     plugin.ArtifactStream.MediaType,
+			MetadataMediaType:             plugin.ArtifactStream.MetadataMediaType,
+			Parts:                         plugin.ArtifactStream.Parts,
+			PartOrder:                     plugin.ArtifactStream.PartOrder,
+			MaximumArtifactBytes:          plugin.ArtifactStream.MaximumArtifactBytes,
+			MinimumArtifactBytes:          plugin.ArtifactStream.MinimumArtifactBytes,
+			MaximumMetadataBytes:          plugin.ArtifactStream.MaximumMetadataBytes,
+			MaximumMultipartOverheadBytes: plugin.ArtifactStream.MaximumMultipartOverheadBytes,
+			MaximumRequestBytes:           plugin.ArtifactStream.MaximumRequestBytes,
+			MaximumReceiptBytes:           plugin.ArtifactStream.MaximumReceiptBytes,
+			AcceptedStatus:                plugin.ArtifactStream.AcceptedStatus,
+			FilenameForwarded:             plugin.ArtifactStream.FilenameForwarded,
+			Deadline:                      testSeconds(contract.Deadlines.ArtifactStreamSeconds),
+			InvocationContext: presentation.ArtifactInvocationContract{
+				MaximumBytes: plugin.ArtifactStream.InvocationContext.MaximumBytes,
+				Required:     plugin.ArtifactStream.InvocationContext.Required,
+				Optional:     plugin.ArtifactStream.InvocationContext.Optional,
+				Headers:      plugin.ArtifactStream.InvocationContext.Headers,
+			},
+		},
+		Registration:         testDocument(infrastructure.DocumentContract{MediaType: contract.Identity.Registration.MediaType, MaximumBytes: contract.Identity.Registration.MaximumBytes, Required: contract.Identity.Registration.Required}),
+		MaximumMetadataBytes: plugin.MaximumMetadataBytes,
+		ReadinessDeadline:    testSeconds(contract.Deadlines.PluginReadinessSeconds),
+		Problems:             problems,
+		Errors:               errorTable,
+		OutcomeProblems:      contract.OutcomeProblems,
+		SuccessOutcomes:      contract.SuccessOutcomes,
 	}
 	if err := contracts.Validate(); err != nil {
 		return presentation.Contracts{}, err
@@ -230,9 +323,10 @@ func presentationContracts(contract infrastructure.HTTPContract) (presentation.C
 // testDocument converts one contract document description to the injected form.
 func testDocument(document infrastructure.DocumentContract) presentation.DocumentContract {
 	return presentation.DocumentContract{
-		MediaType:    document.MediaType,
-		MaximumBytes: document.MaximumBytes,
-		Required:     document.Required,
+		MediaType:       document.MediaType,
+		MaximumBytes:    document.MaximumBytes,
+		Required:        document.Required,
+		DigestAlgorithm: document.DigestAlgorithm,
 	}
 }
 

@@ -45,31 +45,40 @@ var errTestStart = errors.New("test fixture could not start")
 // identifiers the asset uses, not contract values, and the presentation mapping
 // checks that the asset registers exactly this set.
 const (
-	testRouteIdentity     = "identity"
-	testRouteManifest     = "manifest"
-	testRouteConfigSchema = "configSchema"
-	testRouteHealth       = "health"
-	testRouteReady        = "ready"
-	testRouteReload       = "reload"
-	testRouteMetrics      = "metrics"
+	testRouteIdentity       = "identity"
+	testRouteManifest       = "manifest"
+	testRouteConfigSchema   = "configSchema"
+	testRouteHealth         = "health"
+	testRouteReady          = "ready"
+	testRouteReload         = "reload"
+	testRouteArtifactStream = "artifactStream"
+	testRouteAdminSurface   = "adminSurface"
+	testRouteAdminAction    = "adminAction"
+	testRouteMetrics        = "metrics"
 )
 
 // The harness paths. They belong to the fixture alone and are named here once.
 // The control surface speaks no contract, so it names its own media type.
 const (
-	testRouteControlReload      = "/control/reload"
-	testRouteControlPublish     = "/control/publish"
-	testRouteControlFault       = "/control/fault"
-	testRouteControlSecretFault = "/control/secret-fault"
-	testRouteControlSecret      = "/control/secret"
-	testRouteControlState       = "/control/state"
-	testRouteControlDocument    = "/control/document"
-	testRouteControlDrops       = "/control/drops"
-	testRouteControlConnections = "/control/connections"
-	testRouteControlRotation    = "/control/rotation"
-	testRouteControlReconnect   = "/control/reconnect"
-	testRouteControlLoad        = "/control/load"
-	testControlMediaType        = "application/json"
+	testRouteControlReload             = "/control/reload"
+	testRouteControlPublish            = "/control/publish"
+	testRouteControlFault              = "/control/fault"
+	testRouteControlSecretFault        = "/control/secret-fault"
+	testRouteControlSecret             = "/control/secret"
+	testRouteControlState              = "/control/state"
+	testRouteControlDocument           = "/control/document"
+	testRouteControlDrops              = "/control/drops"
+	testRouteControlConnections        = "/control/connections"
+	testRouteControlRotation           = "/control/rotation"
+	testRouteControlReconnect          = "/control/reconnect"
+	testRouteControlLoad               = "/control/load"
+	testRouteControlArtifactStream     = "/control/artifact-stream"
+	testRouteControlArtifactProbes     = "/control/artifact-probes"
+	testRouteControlContractValidation = "/control/contract-validation"
+	testRouteControlAdminSurface       = "/control/admin-surface"
+	testRouteControlAdminAction        = "/control/admin-action"
+	testRouteControlAdminProbes        = "/control/admin-action-probes"
+	testControlMediaType               = "application/json"
 )
 
 // Fixture inputs. These are a plugin author's test data, not contract values: one
@@ -327,6 +336,9 @@ func run() error {
 	// The plugin's REST surface. Readiness is the lifecycle's own answer adapted to
 	// the port the handler set declares, and registration is the lifecycle's
 	// document, which always advertises the contract this handler set answers for.
+	artifactReceiver := &testArtifactReceiver{}
+	artifactReceiver.started = make(chan struct{}, 1)
+	adminActions := &testAdminActions{started: make(chan struct{})}
 	handlers, err := presentation.NewHandlerSet(presentation.HandlerConfiguration{
 		Contracts:    contracts,
 		Lifecycle:    lifecycle,
@@ -334,6 +346,9 @@ func run() error {
 		Registration: testRegistrationOf(lifecycle),
 		Metadata:     testMetadata{},
 		Metrics:      collector,
+		Artifacts:    artifactReceiver,
+		AdminSurface: testAdminMetadata{},
+		AdminActions: adminActions,
 	})
 	if err != nil {
 		return fmt.Errorf("%w: handler set: %v", errTestStart, err)
@@ -389,8 +404,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("%w: Core to plugin transport: %v", errTestStart, err)
 	}
+	artifactStatus := &testArtifactStatusOverride{transport: coreToPluginTLS}
 	coreToPlugin, err := infrastructure.NewPluginClient(contract, pluginTLSURL,
-		coreToPluginTLS, identities.pluginPeer)
+		artifactStatus, identities.pluginPeer)
 	if err != nil {
 		return fmt.Errorf("%w: Core to plugin client: %v", errTestStart, err)
 	}
@@ -424,7 +440,7 @@ func run() error {
 		pluginAddress:    pluginTLSURL,
 		readyPath:        readyEndpoint.Path,
 	})
-	control := newTestControl(core, contract, coreToPlugin, newTestSecrets(secrets), applier, scenarios)
+	control := newTestControl(core, contract, coreToPlugin, newTestSecrets(secrets), applier, scenarios, artifactReceiver, adminActions, artifactStatus, coreCredentials, pluginTLSURL)
 
 	unsafeControlRefused, err := testUnsafeControlRefused(contract)
 	if err != nil {

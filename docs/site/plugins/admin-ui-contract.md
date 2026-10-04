@@ -19,8 +19,10 @@ plugin-owned. Не размещать Admin Surface в `pluginprotocol`, кот�
 ограничением входящих байтов, cancellation/backpressure и receipt envelope;
 плагин владеет schema metadata, форматом архива, проверкой содержимого и
 durable operation. Core не импортирует peer-only `pluginprotocol` и не
-буферизует весь artifact. Этот endpoint пока является целевым контрактом,
-а не реализованной частью v1 runtime; см. SDK TODO и Server acceptance.
-Это требуемое расширение Core API, указанное в
+буферизует весь artifact. SDK endpoint реализован и проверен на настоящем
+Core→SDK→Server child-process пути: первая публикация, receipt и status action
+долговечной operation, выдача опубликованного сайта и повторный запуск Server.
+Ограничения и формат endpoint принадлежат versioned SDK contract. Это
+расширение Core API описано в
 [API boundaries](/architecture/api-boundaries); endpoint не является
 неофициальным direct-plugin URL.

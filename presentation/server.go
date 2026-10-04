@@ -19,14 +19,60 @@ var ErrMissingHandlerDependency = errors.New("missing Plugin SDK handler depende
 // describe. It carries no value.
 var ErrIncompatibleMetricsExposition = errors.New("metrics exposition does not match the Plugin SDK contract media type")
 
+// ArtifactInput is a bounded product-neutral artifact invocation. Metadata and
+// media type are supplied by Core after authorization; Body is streamed and
+// must be consumed before AcceptArtifact returns.
+type ArtifactInput struct {
+	Invocation  models.ArtifactInvocation
+	Metadata    []byte
+	ContentType string
+	Body        io.Reader
+}
+
+// ArtifactResponse is a product-owned HTTP result. The SDK only bounds and
+// validates its JSON body; it does not interpret operation or error fields.
+type ArtifactResponse struct {
+	StatusCode int
+	Body       []byte
+}
+
+// ArtifactAcceptor consumes one streamed artifact and returns its product-owned
+// result. Implementations must finish consuming Body before returning.
+type ArtifactAcceptor interface {
+	AcceptArtifact(ctx context.Context, input ArtifactInput) (ArtifactResponse, error)
+}
+
+// AdminSurfaceProvider publishes the plugin-owned generic management descriptor
+// as exact JSON bytes. The SDK bounds and validates the document but does not
+// interpret its schema or product fields.
+type AdminSurfaceProvider interface {
+	AdminSurface(ctx context.Context) ([]byte, error)
+}
+
+// AdminActionInput contains an authorized generic invocation and its exact JSON
+// request bytes. Product meaning remains entirely inside the callback.
+type AdminActionInput struct {
+	Invocation models.AdminActionInvocation
+	Body       []byte
+}
+
+type AdminActionResponse struct {
+	StatusCode int
+	Body       []byte
+}
+
+type AdminActionHandler interface {
+	HandleAdminAction(ctx context.Context, input AdminActionInput) (AdminActionResponse, error)
+}
+
 // The ports below are the whole surface the handler layer needs. They are
 // deliberately narrow and structural, so the application lifecycle and the
 // infrastructure metrics collector satisfy them without this package importing
 // either layer or naming a concrete type.
 
-// Lifecycle is the only write path: the Reload use case of the application
-// layer. It returns a non-success acknowledgement carrying the contract outcome
-// for every refusal, so this layer never parses an error to learn what happened.
+// Lifecycle is the Reload use case of the application layer. It returns a
+// non-success acknowledgement carrying the contract outcome for every refusal,
+// so this layer never parses an error to learn what happened.
 type Lifecycle interface {
 	Reload(ctx context.Context, request models.Reload) (models.ReloadAcknowledgement, error)
 }
@@ -82,6 +128,11 @@ type HandlerConfiguration struct {
 	Metadata MetadataProvider
 	// Metrics is the instrumentation collector.
 	Metrics MetricsExposition
+	// Artifacts handles the generic binary-action transport. It is optional for
+	// plugins that do not declare artifact actions in their own capabilities.
+	Artifacts    ArtifactAcceptor
+	AdminSurface AdminSurfaceProvider
+	AdminActions AdminActionHandler
 }
 
 // HandlerSet is the built REST surface. It owns a request multiplexer whose
@@ -95,6 +146,9 @@ type HandlerSet struct {
 	registration RegistrationProvider
 	metadata     MetadataProvider
 	metrics      MetricsExposition
+	artifacts    ArtifactAcceptor
+	adminSurface AdminSurfaceProvider
+	adminActions AdminActionHandler
 	handler      http.Handler
 }
 
@@ -109,7 +163,7 @@ func NewHandlerSet(configuration HandlerConfiguration) (*HandlerSet, error) {
 	}
 	if configuration.Lifecycle == nil || configuration.Readiness == nil ||
 		configuration.Registration == nil || configuration.Metadata == nil ||
-		configuration.Metrics == nil {
+		configuration.Metrics == nil || configuration.AdminSurface == nil || configuration.AdminActions == nil {
 		return nil, ErrMissingHandlerDependency
 	}
 	// The collector announces the media type it renders. If that is not the
@@ -125,6 +179,9 @@ func NewHandlerSet(configuration HandlerConfiguration) (*HandlerSet, error) {
 		registration: configuration.Registration,
 		metadata:     configuration.Metadata,
 		metrics:      configuration.Metrics,
+		artifacts:    configuration.Artifacts,
+		adminSurface: configuration.AdminSurface,
+		adminActions: configuration.AdminActions,
 	}
 	set.handler = set.routes()
 	return set, nil
@@ -162,6 +219,9 @@ func (set *HandlerSet) routes() http.Handler {
 	serve(set.contracts.HealthEndpoint, set.handleHealth)
 	serve(set.contracts.ReadyEndpoint, set.handleReady)
 	serve(set.contracts.ReloadEndpoint, set.handleReload)
+	serve(set.contracts.ArtifactStreamEndpoint, set.handleArtifactStream)
+	serve(set.contracts.AdminSurfaceEndpoint, set.handleAdminSurface)
+	serve(set.contracts.AdminActionEndpoint, set.handleAdminAction)
 	serve(set.contracts.MetricsEndpoint, set.handleMetrics)
 	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
 		set.writeTransportProblem(writer, notFoundKey)

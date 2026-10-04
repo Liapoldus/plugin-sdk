@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -73,20 +74,72 @@ type RegistrationContract struct {
 }
 
 type PluginContract struct {
-	Responses             ResponseContract    `json:"responses"`
-	Endpoints             map[string]Endpoint `json:"endpoints"`
-	ReloadRequest         DocumentContract    `json:"reloadRequest"`
-	ReloadAcknowledgement DocumentContract    `json:"reloadAcknowledgement"`
-	Readiness             DocumentContract    `json:"readiness"`
-	Manifest              DocumentContract    `json:"manifest"`
-	ConfigurationSchema   DocumentContract    `json:"configurationSchema"`
-	MaximumMetadataBytes  int64               `json:"maximumMetadataBytes"`
+	Responses             ResponseContract       `json:"responses"`
+	Endpoints             map[string]Endpoint    `json:"endpoints"`
+	ReloadRequest         DocumentContract       `json:"reloadRequest"`
+	ReloadAcknowledgement DocumentContract       `json:"reloadAcknowledgement"`
+	Readiness             DocumentContract       `json:"readiness"`
+	Manifest              DocumentContract       `json:"manifest"`
+	ConfigurationSchema   DocumentContract       `json:"configurationSchema"`
+	MaximumMetadataBytes  int64                  `json:"maximumMetadataBytes"`
+	ArtifactStream        ArtifactStreamContract `json:"artifactStream"`
+	AdminSurface          DocumentContract       `json:"adminSurface"`
+	AdminAction           AdminActionContract    `json:"adminAction"`
+}
+
+type AdminActionContract struct {
+	MediaType            string                  `json:"mediaType"`
+	MaximumRequestBytes  int64                   `json:"maximumRequestBytes"`
+	MaximumResponseBytes int64                   `json:"maximumResponseBytes"`
+	MaximumPageIDBytes   int                     `json:"maximumPageIdBytes"`
+	MaximumActionIDBytes int                     `json:"maximumActionIdBytes"`
+	PathSegmentPattern   string                  `json:"pathSegmentPattern"`
+	ResponseStatus       StatusRangeContract     `json:"responseStatus"`
+	DeadlineSeconds      int                     `json:"deadlineSeconds"`
+	InvocationContext    AdminInvocationContract `json:"invocationContext"`
+}
+
+type StatusRangeContract struct {
+	Minimum int `json:"minimum"`
+	Maximum int `json:"maximum"`
+}
+
+type AdminInvocationContract struct {
+	MaximumBytes        int               `json:"maximumBytes"`
+	UnknownHeaderPrefix string            `json:"unknownHeaderPrefix"`
+	Required            []string          `json:"required"`
+	Optional            []string          `json:"optional"`
+	Headers             map[string]string `json:"headers"`
+}
+
+type ArtifactStreamContract struct {
+	MediaType                     string                     `json:"mediaType"`
+	MetadataMediaType             string                     `json:"metadataMediaType"`
+	Parts                         []string                   `json:"parts"`
+	PartOrder                     []string                   `json:"partOrder"`
+	MaximumArtifactBytes          int64                      `json:"maximumArtifactBytes"`
+	MinimumArtifactBytes          int64                      `json:"minimumArtifactBytes"`
+	MaximumMetadataBytes          int64                      `json:"maximumMetadataBytes"`
+	MaximumMultipartOverheadBytes int64                      `json:"maximumMultipartOverheadBytes"`
+	MaximumRequestBytes           int64                      `json:"maximumRequestBytes"`
+	MaximumReceiptBytes           int64                      `json:"maximumReceiptBytes"`
+	AcceptedStatus                int                        `json:"acceptedStatus"`
+	FilenameForwarded             bool                       `json:"filenameForwarded"`
+	InvocationContext             ArtifactInvocationContract `json:"invocationContext"`
+}
+
+type ArtifactInvocationContract struct {
+	MaximumBytes int               `json:"maximumBytes"`
+	Required     []string          `json:"required"`
+	Optional     []string          `json:"optional"`
+	Headers      map[string]string `json:"headers"`
 }
 
 type DocumentContract struct {
-	MediaType    string   `json:"mediaType"`
-	MaximumBytes int64    `json:"maximumBytes"`
-	Required     []string `json:"required"`
+	MediaType       string   `json:"mediaType"`
+	MaximumBytes    int64    `json:"maximumBytes"`
+	Required        []string `json:"required"`
+	DigestAlgorithm string   `json:"digestAlgorithm"`
 }
 
 type ResponseContract struct {
@@ -174,6 +227,7 @@ type DeadlinesContract struct {
 	PluginShutdownGraceSeconds  int `json:"pluginShutdownGraceSeconds"`
 	ClientResponseHeaderSeconds int `json:"clientResponseHeaderSeconds"`
 	ClientDialSeconds           int `json:"clientDialSeconds"`
+	ArtifactStreamSeconds       int `json:"artifactStreamSeconds"`
 }
 
 type LoggingContract struct {
@@ -299,6 +353,7 @@ func LoadHTTPContract() (HTTPContract, error) {
 }
 
 func (contract HTTPContract) validate() error {
+	artifact := contract.Plugin.ArtifactStream
 	switch {
 	case contract.ContractVersion != expectedContractVersion:
 		return fmt.Errorf("%w: version %q", ErrContractMismatch, contract.ContractVersion)
@@ -317,6 +372,31 @@ func (contract HTTPContract) validate() error {
 		contract.Plugin.Manifest.MaximumBytes <= 0,
 		contract.Plugin.ConfigurationSchema.MaximumBytes <= 0:
 		return fmt.Errorf("%w: document limits", ErrInvalidHTTPContract)
+	case contract.Plugin.AdminSurface.MaximumBytes <= 0 || contract.Plugin.AdminSurface.DigestAlgorithm == "",
+		contract.Plugin.AdminAction.MaximumRequestBytes <= 0 || contract.Plugin.AdminAction.MaximumResponseBytes <= 0,
+		contract.Plugin.AdminAction.MaximumPageIDBytes <= 0 || contract.Plugin.AdminAction.MaximumActionIDBytes <= 0,
+		contract.Plugin.AdminAction.PathSegmentPattern == "" || contract.Plugin.AdminAction.DeadlineSeconds <= 0,
+		contract.Plugin.AdminAction.ResponseStatus.Minimum < 200 || contract.Plugin.AdminAction.ResponseStatus.Maximum > 599 ||
+			contract.Plugin.AdminAction.ResponseStatus.Minimum > contract.Plugin.AdminAction.ResponseStatus.Maximum,
+		contract.Plugin.AdminAction.InvocationContext.MaximumBytes <= 0 ||
+			contract.Plugin.AdminAction.InvocationContext.UnknownHeaderPrefix == "":
+		return fmt.Errorf("%w: admin surface/action limits", ErrInvalidHTTPContract)
+	case contract.Plugin.Endpoints["adminAction"].Method == "" ||
+		!strings.Contains(contract.Plugin.Endpoints["adminAction"].Path, "{page}") ||
+		!strings.Contains(contract.Plugin.Endpoints["adminAction"].Path, "{action}"):
+		return fmt.Errorf("%w: admin action endpoint", ErrInvalidHTTPContract)
+	case artifact.MediaType == "" || artifact.MetadataMediaType == "" ||
+		artifact.MaximumArtifactBytes <= 0 || artifact.MinimumArtifactBytes <= 0 ||
+		artifact.MinimumArtifactBytes > artifact.MaximumArtifactBytes ||
+		artifact.MaximumMetadataBytes <= 0 || artifact.MaximumMultipartOverheadBytes <= 0 ||
+		artifact.MaximumReceiptBytes <= 0 || artifact.AcceptedStatus < 200 || artifact.AcceptedStatus >= 300 ||
+		artifact.FilenameForwarded || len(artifact.Parts) != 2 || len(artifact.PartOrder) != 2 ||
+		artifact.Parts[0] == "" || artifact.Parts[1] == "" || artifact.Parts[0] == artifact.Parts[1] ||
+		artifact.PartOrder[0] != artifact.Parts[0] || artifact.PartOrder[1] != artifact.Parts[1] ||
+		artifact.MaximumRequestBytes != artifact.MaximumArtifactBytes+artifact.MaximumMetadataBytes+artifact.MaximumMultipartOverheadBytes ||
+		artifact.InvocationContext.MaximumBytes <= 0 || len(artifact.InvocationContext.Required) == 0 ||
+		len(artifact.InvocationContext.Headers) != len(artifact.InvocationContext.Required)+len(artifact.InvocationContext.Optional):
+		return fmt.Errorf("%w: artifact stream contract", ErrInvalidHTTPContract)
 	case contract.Core.ConfigPull.MaximumBytes <= 0,
 		contract.Core.ConfigPull.RequestMediaType == "",
 		len(contract.Core.ConfigPull.GenerationStates) == 0,
@@ -337,6 +417,17 @@ func (contract HTTPContract) validate() error {
 	case contract.Deadlines.PluginReloadSeconds <= 0, contract.Deadlines.CoreConfigPullSeconds <= 0,
 		contract.Deadlines.ClientDialSeconds <= 0, contract.Deadlines.PluginWriteSeconds <= 0:
 		return fmt.Errorf("%w: deadlines", ErrInvalidHTTPContract)
+	case contract.Deadlines.ArtifactStreamSeconds <= 0:
+		return fmt.Errorf("%w: artifact stream deadline", ErrInvalidHTTPContract)
+	}
+	if err := validateArtifactInvocationContract(artifact.InvocationContext); err != nil {
+		return err
+	}
+	if err := validateAdminInvocationContract(contract.Plugin.AdminAction.InvocationContext); err != nil {
+		return err
+	}
+	if _, err := regexp.Compile(contract.Plugin.AdminAction.PathSegmentPattern); err != nil {
+		return fmt.Errorf("%w: admin action path segment pattern", ErrInvalidHTTPContract)
 	}
 	for name := range contract.Plugin.Endpoints {
 		if _, err := contract.Endpoint(name); err != nil {
@@ -355,4 +446,69 @@ func (contract HTTPContract) validate() error {
 		}
 	}
 	return nil
+}
+
+func validateAdminInvocationContract(contract AdminInvocationContract) error {
+	required := []string{"callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "requestId"}
+	optional := []string{"idempotencyKey", "ifMatch"}
+	if !sameStringSet(contract.Required, required) || !sameStringSet(contract.Optional, optional) ||
+		len(contract.Headers) != len(required)+len(optional) {
+		return fmt.Errorf("%w: admin invocation fields", ErrInvalidHTTPContract)
+	}
+	seen := map[string]struct{}{}
+	for _, key := range append(append([]string{}, required...), optional...) {
+		header := contract.Headers[key]
+		if header == "" || strings.ContainsAny(header, "\r\n :") {
+			return fmt.Errorf("%w: admin invocation header", ErrInvalidHTTPContract)
+		}
+		folded := strings.ToLower(header)
+		if _, exists := seen[folded]; exists {
+			return fmt.Errorf("%w: admin invocation duplicate header", ErrInvalidHTTPContract)
+		}
+		seen[folded] = struct{}{}
+	}
+	return nil
+}
+
+func validateArtifactInvocationContract(contract ArtifactInvocationContract) error {
+	logical := []string{"callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "idempotencyKey", "requestId", "ifMatch"}
+	required := []string{"callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "idempotencyKey", "requestId"}
+	optional := []string{"ifMatch"}
+	if len(contract.Headers) != len(logical) || !sameStringSet(contract.Required, required) || !sameStringSet(contract.Optional, optional) {
+		return fmt.Errorf("%w: artifact invocation headers", ErrInvalidHTTPContract)
+	}
+	seen := make(map[string]struct{}, len(logical))
+	for _, key := range logical {
+		header := contract.Headers[key]
+		if header == "" || strings.ContainsAny(header, "\r\n :") {
+			return fmt.Errorf("%w: artifact invocation header", ErrInvalidHTTPContract)
+		}
+		if _, duplicate := seen[strings.ToLower(header)]; duplicate {
+			return fmt.Errorf("%w: duplicate artifact invocation header", ErrInvalidHTTPContract)
+		}
+		seen[strings.ToLower(header)] = struct{}{}
+	}
+	for _, key := range append(append([]string{}, contract.Required...), contract.Optional...) {
+		if _, exists := contract.Headers[key]; !exists {
+			return fmt.Errorf("%w: artifact invocation field", ErrInvalidHTTPContract)
+		}
+	}
+	return nil
+}
+
+func sameStringSet(actual, expected []string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(expected))
+	for _, value := range expected {
+		seen[value] = struct{}{}
+	}
+	for _, value := range actual {
+		if _, ok := seen[value]; !ok {
+			return false
+		}
+		delete(seen, value)
+	}
+	return len(seen) == 0
 }
