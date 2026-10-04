@@ -324,6 +324,8 @@ SDK остаётся product-agnostic, не зависит от `pluginprotocol`
 для anonymous, wrong-identity, revoked и expired credentials; секреты не
 возвращаются в fixtures, логах, errors, metrics и ACK.
 
-Открыты deployment/release gates: hosted CI, непубликовавшиеся canonical
-module versions и координация v1 release всех потребителей. Linux VM runtime
-проверен в OrbStack; V2 embedding/in-process adapter не входит в v1 readiness.
+SDK `v1.0.0` опубликован в `origin/main`; macOS и Ubuntu hosted CI прошли.
+Остаются end-to-end release gates экосистемы: Server/forms-db hosted CI,
+актуальные VitePress pins и согласованные release tags потребителей. Linux VM
+runtime проверен в OrbStack; V2 embedding/in-process adapter не входит в v1
+readiness.
