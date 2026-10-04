@@ -2,24 +2,24 @@
 
 ## Повторная проверка — 2026-10-04
 
-Текущий worktree: `make check` прошёл (14 файлов / 190 тестов),
+Проверка до релиза: `make check` прошёл (14 файлов / 190 тестов),
 `GOWORK=off go build ./...`, `GOWORK=off go vet ./...` и
-`git diff --check` прошли. Hosted CI и опубликованные module versions остаются
-release gates.
+`git diff --check` прошли. Актуальное опубликованное состояние приведено в
+дополнении от 2026-10-05 ниже.
 
 Дополнительная Linux-проверка 2026-10-04: в Ubuntu 24.04.5 ARM64 VM под
 OrbStack повторно прошёл `make check` (14 файлов / 190 тестов), включая Go
 build/vet. Это Linux VM runtime evidence; hosted CI и опубликованные module
-versions по-прежнему не подтверждены. Отдельный bare-metal host не требуется
-для v1 Linux runtime gate.
+versions на дату проверки ещё не были подтверждены. Отдельный bare-metal host
+не требуется для v1 Linux runtime gate.
 
 ## Документация
 
 - [x] Общие Plugin SDK/lifecycle/Admin Surface Markdown и Mermaid исходники
   принадлежат этому repo в `docs/site/`; агрегатор собирает закреплённую
   ревизию, не поддерживая редактируемую копию.
-- [ ] После изменения owner docs обновить pin в
-  `liapoldus.github.io/docs-sources.json` и проверить единый сайт.
+- [x] После изменения owner docs pin обновлён в
+  `liapoldus.github.io/docs-sources.json`, единый сайт собран и развёрнут.
 
 ## Актуальная проверка — 2026-10-02
 
@@ -36,7 +36,8 @@ Core→Server/forms-db child-process smoke пройден. Ранее приве
 файле ошибки consumer-компиляции и незакрытый Core integration gate относятся
 к устаревшему состоянию и не являются текущими TODO. На момент этой проверки
 оставались Linux runtime, hosted CI, опубликованные module versions и общий
-release gate; актуальная Linux-проверка 2026-10-04 зафиксирована выше.
+release gate; актуальная Linux-проверка 2026-10-04 зафиксирована выше, а все
+внешние release gates закрыты дополнением 2026-10-05.
 
 Нормативная цель: [Core target](https://liapoldus.github.io/core/architecture/target),
 [v1 acceptance](https://liapoldus.github.io/core/configuration/acceptance) и
@@ -275,7 +276,7 @@ schema не копируются hardcode-строками по consumers.
   smoke проверяет настоящий SDK REST/mTLS, exact pull/ACK, Server traffic,
   rollback, artifact publish и persistence после рестартов. Повторный Linux
   runtime suite и прямой production E2E прошли в Ubuntu guest под OrbStack;
-  hosted CI остаётся отдельным gate.
+  на момент записи hosted CI оставался отдельным gate; он прошёл 2026-10-05.
   Удалённый `pluginprotocol/pluginv1` lifecycle не восстановлен; `control.reload`
   остаётся единственным plugin reload route.
 - [x] Проверены вручную запускаемые plugins на macOS и в Linux VM runtime:
@@ -291,9 +292,8 @@ schema не копируются hardcode-строками по consumers.
 - [x] License metadata: root `LICENSE` declares MIT; the module has no external
   Go module requirements, so there is no separate dependency-license inventory
   for this SDK module.
-- [ ] Hosted CI на согласованной опубликованной ревизии и release provenance.
-  Локальные suites и integration smoke зелёные; remote CI не проверен и не
-  объявляется пройденным.
+- [x] Hosted CI на согласованной опубликованной ревизии и release provenance:
+  macOS/Ubuntu tag CI прошли; SDK `v1.0.1` и VitePress pins опубликованы.
 
 ## Отложено до v2: embedding и in-process adapter
 
@@ -317,7 +317,8 @@ schema не копируются hardcode-строками по consumers.
 Проверка 2026-10-02 на macOS: `make check` — 14 Vitest files / 189 tests,
 `go build ./...` и `go vet ./...`; отдельный `GOWORK=off go vet ./...` тоже
 проходит. Актуальный набор 14 файлов / 190 тестов и Linux VM runtime повторно
-проверены 2026-10-04; hosted CI остаётся открытым.
+проверены 2026-10-04; hosted CI на дату этой записи оставался открытым и прошёл
+позже, 2026-10-05.
 
 SDK остаётся product-agnostic, не зависит от `pluginprotocol` и не содержит
 второй lifecycle-модели. Пройденные lifecycle/mTLS проверки подтверждают отказ
