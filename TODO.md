@@ -328,25 +328,15 @@ schema не копируются hardcode-строками по consumers.
   `infrastructure.PeerDirectoryClient`; TS child-process conformance:
   `tests/integration/replica-lifecycle.test.ts` и
   `tests/integration/peer-directory-poll.test.ts`.
-- [ ] Cross-repository Core↔SDK gate: Core repository now contains local WIP for
-  authenticated replica registration, durable lease admission, peer-directory
-  publication and restart fencing. Это ещё не подтверждённый совместимый релиз:
-  API/SDK revisions не закреплены опубликованными commits, а общий clean
-  child-process gate не прошёл. Проверить Core authority per caller, stale
-  incarnation, expiry/reconnect, restart recovery, revoked identity и отсутствие
-  carrier fallback после согласования owner revisions. SDK предоставляет client
-  contract, но не реализует Core endpoint, не делает peer Call и не зависит от
-  `pluginprotocol`.
-  Повторная проверка 2026-10-08 уточнила блокер: опубликованные теги SDK
-  `v1.0.0` и `v1.0.1` не содержат registration/peer-directory API; `v1.0.1`
-  отличается от `v1.0.0` только этим TODO, а удалённый `main` совпадает с
-  `v1.0.1` по коду. Core закреплён на `v1.0.0`, поэтому чистый
-  `GOWORK=off go build ./...` падает на отсутствующих SDK types. Нужные SDK
-  реализация и контракты существуют только в локальном dirty/untracked WIP;
-  его workspace-сборка не считается release evidence. Gate закрывается после
-  завершения SDK owner slice, опубликования совместимой immutable revision и
-  Core build/test против точного pin. До этого не менять Core на branch/local
-  `replace` и не считать cross-repository gate пройденным.
+- [ ] Cross-repository Core↔SDK process gate: Core закреплён на опубликованном
+  Plugin SDK `v1.1.0`, содержащем используемые registration/peer-directory APIs;
+  независимый `GOWORK=off GOFLAGS=-p=1 go build ./...` в Core прошёл 2026-10-09.
+  Тем самым прежний dependency/build blocker закрыт, но conformance не завершён.
+  Открыты сквозные проверки Core authority per caller, stale incarnation,
+  expiry/reconnect, restart recovery, revoked identity и отсутствия carrier
+  fallback на реальных child processes и закреплённых revisions. SDK
+  предоставляет client contract, но не реализует Core endpoint, не делает peer
+  Call и не зависит от `pluginprotocol`.
 - [x] Добавить generic pairwise release-cohort compatibility поверх opaque
   `advertisedContracts`/`acceptedContracts`, не связывая SDK с продуктом.
   `models.ReleaseCohortCompatible` проверяется child-process fixture для
