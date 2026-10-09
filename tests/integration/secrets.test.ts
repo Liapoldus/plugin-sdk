@@ -122,7 +122,7 @@ describe("a secret grant issued to a ready replica", () => {
     expect(answer.second).toBe(spent);
     expect(answer.failure).toBe("invalidSecretGrant");
     expect(statusOfOutcome(String(answer.second))).toBeGreaterThanOrEqual(400);
-    expect(codeOfOutcome(String(answer.second))).toBe(contract.errors.grantSpent.code as string);
+    expect(codeOfOutcome(String(answer.second))).toBe(contract.errors.grantSpent.code);
   });
 
   it("never puts a handle, a value, a reference or a purpose in any answer", async () => {

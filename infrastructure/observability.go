@@ -164,7 +164,11 @@ func (logger *JSONLogger) write(_ context.Context, level, message string, fields
 	}
 	logger.mutex.Lock()
 	defer logger.mutex.Unlock()
-	_, _ = logger.writer.Write(append(encoded, '\n'))
+	if _, err := logger.writer.Write(append(encoded, '\n')); err != nil {
+		// Logging cannot fail a lifecycle operation, and retrying a partial write
+		// would duplicate an event. Never echo the writer's cause or record.
+		return
+	}
 }
 
 // redacts reports whether a key is contract-marked sensitive. Both the

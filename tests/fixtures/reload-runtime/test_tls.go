@@ -110,7 +110,7 @@ func newTestIdentities(contract infrastructure.HTTPContract) (*testIdentities, e
 
 	authorityKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: %w", errTestPKI, err)
 	}
 	authorityTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
@@ -125,17 +125,17 @@ func newTestIdentities(contract infrastructure.HTTPContract) (*testIdentities, e
 	}
 	authorityDER, err := x509.CreateCertificate(rand.Reader, authorityTemplate, authorityTemplate, &authorityKey.PublicKey, authorityKey)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: %w", errTestPKI, err)
 	}
 	authority, err := x509.ParseCertificate(authorityDER)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: %w", errTestPKI, err)
 	}
 	authorityPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: authorityDER})
 
 	coreURI := contract.TransportSecurity.PeerIdentity.UniformResourceIdentifierPrefix + "replica-1"
 	if _, err := url.Parse(coreURI); err != nil {
-		return nil, fmt.Errorf("%w: core replica URI: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: core replica URI: %w", errTestPKI, err)
 	}
 	identities := &testIdentities{
 		corePeer: models.PeerIdentity{
@@ -147,7 +147,7 @@ func newTestIdentities(contract infrastructure.HTTPContract) (*testIdentities, e
 
 	coreCoreURI, err := url.Parse(coreURI)
 	if err != nil {
-		return nil, fmt.Errorf("%w: core replica URI: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: core replica URI: %w", errTestPKI, err)
 	}
 	coreServer, err := testIssueLeaf(2, testCoreCommonName, []*url.URL{coreCoreURI},
 		[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, now, authority, authorityKey)
@@ -176,7 +176,7 @@ func newTestIdentities(contract infrastructure.HTTPContract) (*testIdentities, e
 	impostorURI, err := url.Parse(
 		contract.TransportSecurity.PeerIdentity.UniformResourceIdentifierPrefix + testImpostorURISuffix)
 	if err != nil {
-		return nil, fmt.Errorf("%w: impostor URI: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: impostor URI: %w", errTestPKI, err)
 	}
 	impostorClient, err := testIssueLeaf(testImpostorSerial, testImpostorCommonName,
 		[]*url.URL{impostorURI}, []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, now,
@@ -251,7 +251,7 @@ func newTestIdentities(contract infrastructure.HTTPContract) (*testIdentities, e
 		}},
 	}, authority, authorityKey)
 	if err != nil {
-		return nil, fmt.Errorf("%w: revocation list: %v", errTestPKI, err)
+		return nil, fmt.Errorf("%w: revocation list: %w", errTestPKI, err)
 	}
 	identities.revocation = pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: revocationDER})
 	return identities, nil
@@ -279,7 +279,7 @@ func testIssueLeafWindow(serial int64, commonName string, uris []*url.URL,
 	authorityKey *ecdsa.PrivateKey) (testLeaf, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return testLeaf{}, fmt.Errorf("%w: %v", errTestPKI, err)
+		return testLeaf{}, fmt.Errorf("%w: %w", errTestPKI, err)
 	}
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(serial),
@@ -298,11 +298,11 @@ func testIssueLeafWindow(serial int64, commonName string, uris []*url.URL,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, authority, &key.PublicKey, authorityKey)
 	if err != nil {
-		return testLeaf{}, fmt.Errorf("%w: %v", errTestPKI, err)
+		return testLeaf{}, fmt.Errorf("%w: %w", errTestPKI, err)
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
-		return testLeaf{}, fmt.Errorf("%w: %v", errTestPKI, err)
+		return testLeaf{}, fmt.Errorf("%w: %w", errTestPKI, err)
 	}
 	return testLeaf{
 		certificate: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),

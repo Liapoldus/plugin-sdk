@@ -117,7 +117,7 @@ func (client *PluginClient) ArtifactStream(ctx context.Context, invocation model
 	if client == nil || artifact == nil {
 		return ArtifactStreamResult{}, ErrInvalidControlCall
 	}
-	defer artifact.Close()
+	defer closeResource(artifact)
 	stream := client.contract.Plugin.ArtifactStream
 	if err := invocation.Validate(); err != nil {
 		return ArtifactStreamResult{}, err
@@ -157,7 +157,7 @@ func (client *PluginClient) ArtifactStream(ctx context.Context, invocation model
 	request, err := http.NewRequestWithContext(callCtx, endpoint.Method, target.String(), pipeReader)
 	if err != nil {
 		_ = pipeReader.CloseWithError(err)
-		_ = artifact.Close()
+		closeResource(artifact)
 		<-production
 		return ArtifactStreamResult{}, ErrControlTransportFailed
 	}
@@ -169,35 +169,35 @@ func (client *PluginClient) ArtifactStream(ctx context.Context, invocation model
 	transport, ok := client.transport.(ArtifactControlTransport)
 	if !ok {
 		_ = pipeReader.CloseWithError(ErrInvalidControlCall)
-		_ = artifact.Close()
+		closeResource(artifact)
 		<-production
 		return ArtifactStreamResult{}, ErrInvalidControlCall
 	}
-	response, err := performArtifactControlCall(transport, request)
+	response, err := performArtifactControlCall(transport, request) //nolint:bodyclose // the response body is closed on every return path below.
 	if err != nil {
 		_ = pipeReader.CloseWithError(err)
-		_ = artifact.Close()
+		closeResource(artifact)
 		<-production
 		return ArtifactStreamResult{}, err
 	}
 	if response.Body == nil {
 		_ = pipeReader.CloseWithError(ErrControlPlaneUnusable)
-		_ = artifact.Close()
+		closeResource(artifact)
 		<-production
 		return ArtifactStreamResult{}, ErrControlPlaneUnusable
 	}
 	if response.StatusCode != stream.AcceptedStatus &&
 		(response.StatusCode < http.StatusBadRequest || response.StatusCode >= http.StatusInternalServerError) {
-		_ = response.Body.Close()
+		closeResource(response.Body)
 		_ = pipeReader.CloseWithError(ErrControlDocument)
-		_ = artifact.Close()
+		closeResource(artifact)
 		<-production
 		return ArtifactStreamResult{}, controlUnusable(controlCallReload, ErrControlDocument)
 	}
 	body, readErr := readControlBody(response.Body, stream.MaximumReceiptBytes)
-	_ = response.Body.Close()
-	_ = pipeReader.Close()
-	_ = artifact.Close()
+	closeResource(response.Body)
+	closeResource(pipeReader)
+	closeResource(artifact)
 	productionErr := <-production
 	if productionErr != nil {
 		return ArtifactStreamResult{}, productionErr
@@ -222,7 +222,7 @@ func (client *PluginClient) AdminSurface(ctx context.Context) (AdminSurfaceDocum
 	if err != nil {
 		return AdminSurfaceDocument{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if !controlIsSuccess(response.StatusCode) {
 		return AdminSurfaceDocument{}, client.refusal(response, client.contract.Plugin.AdminSurface.MaximumBytes)
 	}
@@ -287,7 +287,7 @@ func (client *PluginClient) AdminAction(ctx context.Context, invocation models.A
 	if response.Body == nil {
 		return AdminActionResult{}, controlUnusable(controlCallReload, ErrControlPlaneUnusable)
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	body, err := readControlBody(response.Body, contract.MaximumResponseBytes)
 	if err != nil {
 		return AdminActionResult{}, controlBodyFailure(controlCallReload, err)
@@ -530,7 +530,7 @@ func (client *PluginClient) Reload(ctx context.Context, reload models.Reload) (m
 	if err != nil {
 		return models.ReloadAcknowledgement{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	acknowledgement := client.contract.Plugin.ReloadAcknowledgement
 	if !controlIsSuccess(response.StatusCode) {
 		return models.ReloadAcknowledgement{}, client.refusal(response, acknowledgement.MaximumBytes)
@@ -569,7 +569,7 @@ func (client *PluginClient) Readiness(ctx context.Context) (models.Readiness, er
 	if err != nil {
 		return models.Readiness{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	ready := client.notReady
 	if !controlIsSuccess(response.StatusCode) && response.StatusCode != ready {
 		return models.Readiness{}, client.refusal(response, document.MaximumBytes)
@@ -606,7 +606,7 @@ func (client *PluginClient) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if response.StatusCode != health.Status {
 		return client.refusal(response, maximum)
 	}
@@ -654,7 +654,7 @@ func (client *PluginClient) Identity(ctx context.Context) (models.Registration, 
 	if err != nil {
 		return models.Registration{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if !controlIsSuccess(response.StatusCode) {
 		return models.Registration{}, client.refusal(response, registration.MaximumBytes)
 	}
@@ -687,7 +687,7 @@ func (client *PluginClient) Metrics(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if !controlIsSuccess(response.StatusCode) {
 		return "", client.refusal(response, maximum)
 	}
@@ -717,7 +717,7 @@ func (client *PluginClient) documentRoute(ctx context.Context, name string, docu
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if !controlIsSuccess(response.StatusCode) {
 		return nil, client.refusal(response, document.MaximumBytes)
 	}

@@ -180,7 +180,7 @@ func (broker *CoreSecretBroker) IssueGrant(ctx context.Context, request models.S
 	if err != nil {
 		return models.SecretGrant{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if !controlIsSuccess(response.StatusCode) {
 		return models.SecretGrant{}, broker.refusal(response, document.MaximumResponseBytes)
 	}
@@ -237,7 +237,7 @@ func (broker *CoreSecretBroker) Redeem(ctx context.Context, redemption models.Se
 	if err != nil {
 		return models.SecretValue{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 	if !controlIsSuccess(response.StatusCode) {
 		// A spent or expired grant is an answer, not a lost peer. The bytes that
 		// came with it are a problem document, never a value, and are dropped.

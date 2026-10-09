@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   codeOfOutcome,
   contract,
+  endpoint,
+  error,
   contractFile,
   endpointNames,
   errorKeys,
@@ -35,9 +37,9 @@ describe("the versioned HTTP contract asset", () => {
 
   it("registers every plugin endpoint once, with a unique method and path", () => {
     const pairs = endpointNames.map(
-      (name) => `${contract.plugin.endpoints[name].method} ${contract.plugin.endpoints[name].path}`,
+      (name) => `${endpoint(name).method} ${endpoint(name).path}`,
     );
-    const paths = endpointNames.map((name) => contract.plugin.endpoints[name].path);
+    const paths = endpointNames.map((name) => endpoint(name).path);
     const writes = pairs.filter((pair) => !pair.startsWith("GET "));
 
     expect(new Set(paths).size).toBe(paths.length);
@@ -55,7 +57,7 @@ describe("the versioned HTTP contract asset", () => {
     const endpoint = contract.plugin.endpoints.artifactStream;
     const stream = contract.plugin.artifactStream;
 
-    expect(endpoint).toEqual({ method: "POST", path: expect.stringMatching(/^\/_liapoldus\/v1\//) });
+    expect(endpoint).toEqual({ method: "POST", path: (expect.stringMatching(/^\/_liapoldus\/v1\//) as unknown) });
     expect(stream).toMatchObject({
       mediaType: "multipart/form-data",
       parts: ["metadata", "artifact"],
@@ -64,7 +66,7 @@ describe("the versioned HTTP contract asset", () => {
       maximumMetadataBytes: 65536,
       maximumMultipartOverheadBytes: 65536,
       maximumRequestBytes: 134348800,
-      maximumReceiptBytes: expect.any(Number),
+      maximumReceiptBytes: (expect.any(Number) as unknown),
       acceptedStatus: 202,
       filenameForwarded: false,
       invocationContext: {
@@ -106,13 +108,13 @@ describe("the versioned HTTP contract asset", () => {
       mediaType: mediaType.json,
       maximumRequestBytes: 1048576,
       maximumResponseBytes: 1048576,
-      deadlineSeconds: expect.any(Number),
-      pathSegmentPattern: expect.any(String),
+      deadlineSeconds: (expect.any(Number) as unknown),
+      pathSegmentPattern: (expect.any(String) as unknown),
       invocationContext: {
         maximumBytes: 8192,
         required: ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "requestId"],
         optional: ["idempotencyKey", "ifMatch"],
-        unknownHeaderPrefix: expect.any(String),
+        unknownHeaderPrefix: (expect.any(String) as unknown),
       },
       responseStatus: { minimum: 200, maximum: 599 },
     });
@@ -162,7 +164,7 @@ describe("the versioned HTTP contract asset", () => {
     const transport = new Set(problemKeys.map((key) => transportProblem(key).code));
     const codes = new Set<string>();
     for (const key of errorKeys) {
-      const problem = contract.errors[key];
+      const problem = error(key);
       expect(problem.status, `status of ${key}`).toBeGreaterThanOrEqual(400);
       expect(problem.status, `status of ${key}`).toBeLessThan(600);
       expect(problem.code, `code of ${key}`).toMatch(/^[a-z][a-z0-9_]*$/);
@@ -176,7 +178,7 @@ describe("the versioned HTTP contract asset", () => {
 
   it("resolves every registered outcome problem to a defined error", () => {
     for (const [outcome, key] of Object.entries(contract.outcomeProblems)) {
-      expect(contract.errors[key as string], `problem key of ${outcome}`).toBeDefined();
+      expect(contract.errors[key], `problem key of ${outcome}`).toBeDefined();
     }
   });
 
@@ -221,7 +223,7 @@ describe("the versioned HTTP contract asset", () => {
     }
     expect([...seen].sort()).toEqual([...successOutcomes].sort());
     expect(perFamily.get("reload")).toContain(
-      contract.idempotency.repeatOfActiveGeneration as string,
+      contract.idempotency.repeatOfActiveGeneration,
     );
     expect(perFamily.get("configPull")?.filter((outcome) => perFamily.get("reload")?.includes(outcome)))
       .toEqual([]);
@@ -247,8 +249,8 @@ describe("the versioned HTTP contract asset", () => {
   });
 
   it("refuses a conflicting descriptor for the active generation with a conflict", () => {
-    const repeat = contract.idempotency.repeatOfActiveGeneration as string;
-    const conflict = contract.idempotency.conflictingDescriptorForActiveGeneration as string;
+    const repeat = contract.idempotency.repeatOfActiveGeneration;
+    const conflict = contract.idempotency.conflictingDescriptorForActiveGeneration;
 
     expect(isSuccessOutcome(repeat), repeat).toBe(true);
     expect(outcomesOf("reload")).toContain(repeat);
@@ -258,7 +260,7 @@ describe("the versioned HTTP contract asset", () => {
   });
 
   it("keys a reload by the replica identity and the whole descriptor", () => {
-    const keyed = contract.idempotency.reloadKeyedBy as string[];
+    const keyed = contract.idempotency.reloadKeyedBy;
 
     expect(new Set(keyed).size).toBe(keyed.length);
     for (const required of ["generation", "sha256", "schemaVersion"]) {
@@ -271,7 +273,7 @@ describe("the versioned HTTP contract asset", () => {
   });
 
   it("publishes only the two durable slots for a generation pull", () => {
-    const states = contract.core.configPull.generationStates as string[];
+    const states = contract.core.configPull.generationStates;
 
     expect([...states].sort()).toEqual([...durableSlots].sort());
   });
@@ -314,8 +316,8 @@ describe("the versioned HTTP contract asset", () => {
   });
 
   it("redacts the members that can carry a credential, document or setting", () => {
-    const always = contract.logging.alwaysRedactedKeys as string[];
-    const redacted = (contract.logging.redactedKeys as string[]).map((key) => key.toLowerCase());
+    const always = contract.logging.alwaysRedactedKeys;
+    const redacted = (contract.logging.redactedKeys).map((key) => key.toLowerCase());
 
     expect(always.length).toBeGreaterThan(0);
     expect(new Set(always).size).toBe(always.length);

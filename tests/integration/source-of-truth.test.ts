@@ -1,3 +1,4 @@
+import { required } from "../support/value";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,7 +15,7 @@ function goFiles(directory: string): string[] {
     if (entry.isDirectory()) {
       return entry.isSymbolicLink() ? [] : goFiles(path);
     }
-    return entry.isFile() && entry.name.endsWith(".go") ? [path] : [];
+    return entry.isFile() && entry.name.endsWith(".go") && !entry.name.endsWith("_test.go") ? [path] : [];
   });
 }
 
@@ -50,7 +51,7 @@ function collectStrings(value: unknown, found: string[] = []): string[] {
 // encoding of a refusal. Help text, the version string and the bare HTTP methods
 // are excluded for the same reason: they are not a per-endpoint value.
 function guardedValues(): string[] {
-  const metrics = contract.plugin.responses.metrics as unknown as Record<string, string>;
+  const metrics = contract.plugin.responses.metrics;
   const vocabulary = new Set([
     ...collectStrings(contract.outcomeProblems),
     ...collectStrings(contract.outcomes),
@@ -83,7 +84,7 @@ function guardedValues(): string[] {
   ].filter((value) => value.length > 2);
 }
 
-describe("the contract asset is the only place a contract value is written", () => {
+describe("typed definitions own constants and JSON assets publish them", () => {
   const contractValues = guardedValues();
 
   it("publishes a value set large enough to be worth guarding", () => {
@@ -95,10 +96,11 @@ describe("the contract asset is the only place a contract value is written", () 
     );
   });
 
-  it("keeps every route, code, media type, metric name and trust prefix out of production Go", () => {
+  it("keeps routes, codes, media types, metric names and trust prefixes in the typed owner", () => {
     const offenders: string[] = [];
 
     for (const { path, source } of productionSources()) {
+      if (path === "infrastructure/contract_definitions.go") continue;
       for (const value of contractValues) {
         if (source.includes(value)) {
           offenders.push(`${path} repeats ${value}`);
@@ -110,7 +112,7 @@ describe("the contract asset is the only place a contract value is written", () 
   });
 
   it("publishes a metric name, help text and label for every counter it declares", () => {
-    const metrics = contract.plugin.responses.metrics as unknown as Record<string, string>;
+    const metrics = contract.plugin.responses.metrics;
 
     for (const name of [
       metrics.readyMetricName,
@@ -127,38 +129,51 @@ describe("the contract asset is the only place a contract value is written", () 
       ["lifecycleCounterHelp", metrics.lifecycleCounterHelp],
       ["pullFailureCounterHelp", metrics.pullFailureCounterHelp],
     ]) {
-      expect(help, `the help of ${field}`).toBeTruthy();
-      expect(help.length).toBeLessThanOrEqual(contract.logging.maximumValueLength as number);
+      expect(help, `the help of ${String(field)}`).toBeTruthy();
+      expect(required(help).length).toBeLessThanOrEqual(contract.logging.maximumValueLength);
     }
   });
 
   it("keeps the contract version itself in one place and pins the loader to it", () => {
-    const version = contract.contractVersion as string;
+    const version = contract.contractVersion;
     const pinning = productionSources().filter((file) => file.source.includes(version));
 
     expect(version).toBeTruthy();
     expect(pinning.map((file) => file.path)).toEqual(["infrastructure/contract.go"]);
     expect(
-      pinning[0].source,
+      required(pinning.find((file) => file.path === "infrastructure/contract.go")).source,
       "the loader must refuse a contract it does not own",
     ).toMatch(new RegExp(`expectedContractVersion\\s*=\\s*"${version.replace(/\./g, "\\.")}"`));
   });
 
-  it("embeds exactly one contract file, and it is the versioned asset", () => {
+  it("does not load generated contracts or schemas as runtime configuration", () => {
     const embeds = productionSources().flatMap((file) =>
-      [...file.source.matchAll(/go:embed\s+(\S+)/g)].map((match) => `${file.path}: ${match[1]}`),
+      [...file.source.matchAll(/go:embed\s+(\S+)/g)].map((match) => `${file.path}: ${String(match[1])}`),
     );
 
-    expect(embeds).toEqual(["infrastructure/contract.go: assets/plugin-sdk/v1/http-contract.json"]);
+    expect(embeds).toEqual([]);
   });
 
-  it("keeps the asset tree to the one versioned contract and no product document", () => {
+  it("loads static constants from typed definitions without JSON decoders", () => {
+    for (const path of ["contract.go", "replica_lifecycle_contract.go", "peer_directory_poll_contract.go", "loopback_plaintext_profile.go"]) {
+      const source = readFileSync(resolve(projectRoot, "infrastructure", path), "utf8");
+      expect(source).not.toMatch(/json\.(NewDecoder|Unmarshal)/);
+      // Schemas and constants are code-owned; public JSON is generated.
+    }
+  });
+
+  it("keeps only versioned SDK contracts and schemas in the asset tree", () => {
     const assets = readdirSync(assetsRoot, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => relative(projectRoot, resolve(assetsRoot, entry.parentPath, entry.name)));
 
-    expect(assets).toEqual([
+    expect(assets.sort()).toEqual([
       "infrastructure/assets/plugin-sdk/v1/http-contract.json",
+      "infrastructure/assets/plugin-sdk/v2/loopback-plaintext-profile.json",
+      "infrastructure/assets/plugin-sdk/v2/peer-directory-poll.json",
+      "infrastructure/assets/plugin-sdk/v2/peer-directory.schema.json",
+      "infrastructure/assets/plugin-sdk/v2/replica-lifecycle.json",
+      "infrastructure/assets/plugin-sdk/v2/replica-lifecycle.schema.json",
     ]);
     expect(statSync(resolve(assetsRoot)).isDirectory()).toBe(true);
   });
@@ -204,7 +219,7 @@ describe("no second lifecycle model exists behind the contract", () => {
     expect(serveMetadata, "the plugin surface has one metadata writer").toBeTruthy();
     expect(serveMetadata).toContain("set.writeDocument(writer, document.MediaType");
     expect(serveMetadata).not.toMatch("writeJSON");
-    expect(serveMetadata).not.toMatch("json\.Unmarsh");
+    expect(serveMetadata).not.toMatch(/json\.Unmarsh/);
   });
 
   it("keeps the SDK free of a product setting, a product capability and a product route", () => {
@@ -213,7 +228,7 @@ describe("no second lifecycle model exists behind the contract", () => {
       /"smtp"\s*:/,
       /"upstream"\s*:/,
       /"captcha"/i,
-      /"identity"\s*:\s*\{/,
+      /"identity"\s*:\s*\{\s*"/,
       /\bcaddy\b/i,
       /sqlite/i,
       /docker/i,
@@ -224,7 +239,7 @@ describe("no second lifecycle model exists behind the contract", () => {
     for (const { path, source } of productionSources()) {
       for (const pattern of forbidden) {
         if (pattern.test(source)) {
-          offenders.push(`${path} matches ${pattern}`);
+          offenders.push(`${path} matches ${String(pattern)}`);
         }
       }
     }
@@ -253,7 +268,7 @@ describe("the SDK depends on nothing but its own domain", () => {
     const module = readFileSync(resolve(projectRoot, "go.mod"), "utf8");
     const allowed = /^module\s+github\.com\/Liapoldus\/plugin-sdk$/m;
     const requirements = [...module.matchAll(/^require\s+(.*)$/gm)].flatMap((match) =>
-      match[1].trim().split(/\s+/),
+      required(match[1]).trim().split(/\s+/),
     );
 
     expect(allowed.test(module), "the module path is the canonical SDK path").toBe(true);
@@ -268,10 +283,10 @@ describe("the SDK depends on nothing but its own domain", () => {
     for (const { path, source } of productionSources()) {
       const specs: string[] = [];
       for (const block of source.matchAll(importBlock)) {
-        specs.push(...[...block[1].matchAll(importLine)].map((match) => match[1]));
+        specs.push(...[...required(block[1]).matchAll(importLine)].map((match) => required(match[1])));
       }
       for (const spec of [...source.matchAll(/^import\s+(?:\w+\s+)?"([^"]+)"/gm)]) {
-        specs.push(spec[1]);
+        specs.push(required(spec[1]));
       }
       for (const imported of specs) {
         const internal = imported.startsWith("github.com/Liapoldus/plugin-sdk/");

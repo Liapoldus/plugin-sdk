@@ -1,7 +1,7 @@
 # Административные страницы Plugin
 
-Plugin может добавить в workspace Constructor собственные административные
-страницы. Это extension control plane, а не расширение public data plane:
+Plugin может объявить собственные административные страницы для совместимого
+клиента управления. Это extension control plane, а не расширение public data plane:
 plugin не получает browser bundle, public route, raw Core credentials или
 право зарегистрировать произвольный HTTP handler.
 
@@ -11,21 +11,21 @@ plugin не получает browser bundle, public route, raw Core credentials 
 предметные administrative actions. Например, forms-db показывает настройки
 storage, фильтруемый список submissions и контролируемое удаление записи.
 Core остаётся единственной точкой internal API, authorization, audit,
-лимитов и redaction; Constructor остаётся единственным renderer UI.
+лимитов и redaction; клиент управления отображает декларативный UI.
 
-<img src="/diagrams/plugin-admin-page-flow.svg" alt="Constructor получает declarative schema через Core и вызывает plugin capabilities через namespaced API" />
+<img src="/diagrams/plugin-admin-page-flow.svg" alt="Клиент управления получает declarative schema через Core и вызывает plugin capabilities через namespaced API" />
 
 ## Три независимых артефакта
 
 | Артефакт | Автор | Хранение | Что содержит |
 | --- | --- | --- | --- |
-| Instance settings | оператор/Constructor | Core SQLite как durable source of truth; plugin pulls versioned JSON после REST `Reload(generation)` | DB connection refs, feature settings; валидируются plugin-owned schema, active runtime держится plugin в памяти |
+| Instance settings | оператор/клиент управления | Core SQLite как durable source of truth; plugin pulls versioned JSON после REST `Reload(generation)` | DB connection refs, feature settings; валидируются plugin-owned schema, active runtime держится plugin в памяти |
 | Admin surface | plugin release | versioned plugin contract | page/section/field/table/action metadata |
 | Page data/action result | plugin через Core | transient response + audit | typed query/action payload, никогда не executable UI |
 
 Instance settings не являются UI schema, а UI schema не является конфигурацией
 Core. Установка plugin instance не создаёт page сама по себе: Core
-сначала получает и валидирует `admin.surface.get`, затем Constructor показывает
+сначала получает и валидирует `admin.surface.get`, затем клиент показывает
 только страницы, которые capability объявляет для данного healthy instance.
 
 ## Декларативная модель страницы
@@ -47,7 +47,7 @@ AdminSurface
 
 Поддерживаемые типы полей: `string`, `number`, `boolean`, `select`,
 `multiselect`, `secret`, `file`, `directory`, `duration`, `size`, `code`,
-`keyValue`, `array`, `object`. Constructor must reject an unknown section,
+`keyValue`, `array`, `object`. Клиент должен отклонять неизвестные section,
 field or action type rather than interpret it. Labels/descriptions are plain
 text; HTML, CSS, JavaScript/module URL, browser route and arbitrary endpoint
 fields are forbidden by schema.
@@ -57,10 +57,10 @@ object-input (`type`, `properties`, `required`, `additionalProperties:false`,
 `minLength`/`maxLength`, `minimum`/`maximum` и `enum`; без `pattern` (чтобы
 не исполнять недоверенные регулярные выражения в browser), `$ref`, executable
 extensions и remote schema).
-Constructor строит форму только из этого schema и
+Клиент строит форму только из этой schema и
 валидирует её перед запросом; Core повторно валидирует до dispatch. Surface
 без `inputSchema` можно показать, но action остаётся disabled с диагностикой;
-Constructor не изобретает payload. Для действия по выбранной строке
+Клиент не изобретает payload. Для действия по выбранной строке
 необязательный `rowInput` явно сопоставляет input key с column key
 (`{"recordId":"id"}`); скрытое угадывание имён полей запрещено.
 
@@ -76,7 +76,7 @@ options response имеет форму `{items:[{value,label}],nextCursor?}`. Co
 сверяет поле/источник с активной Surface и `requiredCapabilities`, валидирует
 вложенный input schema, ограничивает результат 200 options и не принимает из
 браузера capability или endpoint. Отсутствующие/некорректные options делают
-поле недоступным; Constructor не подменяет его произвольным текстовым вводом.
+поле недоступным; клиент не подменяет его произвольным текстовым вводом.
 
 ID страницы стабилен, задаётся в нижнем регистре и локален для instance. Он
 становится частью namespaced API path, но не public Core route. Релиз plugin
@@ -85,7 +85,7 @@ ID страницы стабилен, задаётся в нижнем реги�
 
 ## Пространство имён Core API
 
-Только Core предоставляет указанные ниже внутренние endpoints. Constructor
+Только Core предоставляет указанные ниже внутренние endpoints. Клиент
 никогда не подключается к процессу plugin напрямую.
 
 | Endpoint | Capability dispatch | Semantics |
@@ -153,7 +153,7 @@ payload с уже использованным key даёт conflict. Artifact b
 endpoint. Первый запрос содержит тот же `If-Match`, `Idempotency-Key` и input,
 но не содержит `X-Admin-Confirmation`: Core ничего не dispatch-ит и
 возвращает `428 confirmation_required` с одноразовым непрозрачным
-`confirmationToken` и `expiresAt`. Constructor показывает confirmation UI с
+`confirmationToken` и `expiresAt`. Клиент показывает confirmation UI с
 объявленным текстом. Только после явного подтверждения он повторяет неизменный
 input с теми же `If-Match` и `Idempotency-Key`, добавляя
 `X-Admin-Confirmation: <confirmationToken>`. Core исполняет действие только
@@ -162,7 +162,7 @@ surfaceDigest, input digest, idempotency key)`; срок — пять минут
 input требует нового idempotency key и нового handshake. Токен одноразовый,
 не хранится в persistent browser storage и не попадает в logs/audit.
 
-Plugin никогда не получает raw Constructor access token, secret value,
+Plugin никогда не получает raw client access token, secret value,
 management bearer key или database path.
 
 ## Жизненный цикл и кэш
@@ -172,9 +172,9 @@ management bearer key или database path.
    generation; Core не управляет process lifecycle.
 2. Core запрашивает `admin.surface.get`, сверяет versioned contract и
    сохраняет `(instance, manifest version, surface digest)`.
-3. Constructor читает Surface через Core и отображает разрешённые страницы.
+3. Клиент читает Surface через Core и отображает разрешённые страницы.
 4. Config apply, restart, смена manifest version или unhealthy state сбрасывают
-   cache; Constructor скрывает страницы до получения healthy valid Surface.
+   cache; клиент скрывает страницы до получения healthy valid Surface.
 5. Каждый query/action проверяет current surface digest из `If-Match`;
    устаревший UI получает `409 plugin_surface_changed`, прекращает отправку,
    перезагружает schema и сохраняет только соответствующие schema non-secret
@@ -188,7 +188,7 @@ Core помечает административный Surface недоступ�
 
 - Plugin cannot add an arbitrary Core API endpoint, listener or frontend
   code; all paths and operation kinds are fixed by Core.
-- Constructor renders data and components it owns; it does not eval plugin
+- Клиент отображает данные своими компонентами; он не исполняет plugin
   output, trust HTML, or give plugin a DOM handle.
 - `secret` field is write-only. Query response can state `configured: true`,
   never return its value or a secret reference without permission.
@@ -205,6 +205,6 @@ Core помечает административный Surface недоступ�
 
 Общие Admin UI structures и технические endpoints принадлежат Plugin SDK.
 Product page declarations/actions принадлежат конкретному plugin.
-Core implementation владеет endpoint authorization и dispatch. Constructor
-владеет поведением generated UI. Эта страница — каноническая архитектура;
+Core implementation владеет endpoint authorization и dispatch. Клиент
+управления владеет поведением UI. Эта страница — каноническая архитектура;
 protocol schema и code обязаны точно ей соответствовать.

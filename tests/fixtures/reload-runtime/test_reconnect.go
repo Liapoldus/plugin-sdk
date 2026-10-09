@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"net"
 	"net/http"
 	"net/url"
@@ -97,11 +98,11 @@ type testChurnAnswer struct {
 // and once after, through the production client. Two real answers and not one is
 // the point: a listener that recovers into a state which answers differently, or
 // not at all, has to show it here.
-func (churn *testChurn) run() testChurnReport {
+func (churn *testChurn) run(parent context.Context) testChurnReport {
 	report := testChurnReport{requested: testChurnAttempts}
 	report.openedBefore = churn.connections.snapshot().opened
 
-	before, err := churn.readiness()
+	before, err := churn.readiness(parent)
 	if err != nil {
 		report.failure = "the listener did not answer before the churn"
 		return report
@@ -110,7 +111,7 @@ func (churn *testChurn) run() testChurnReport {
 	report.sha256Before = testChurnDigest(before.body)
 
 	for attempt := 0; attempt < testChurnAttempts; attempt++ {
-		if abandonErr := churn.abandon(); abandonErr != nil {
+		if abandonErr := churn.abandon(parent); abandonErr != nil {
 			report.refused++
 			continue
 		}
@@ -120,7 +121,7 @@ func (churn *testChurn) run() testChurnReport {
 	// A pooled connection would hide a listener that had stopped accepting, so the
 	// request after the churn is guaranteed a connection of its own.
 	churn.client.CloseIdleConnections()
-	after, err := churn.readiness()
+	after, err := churn.readiness(parent)
 	if err != nil {
 		report.failure = "the listener did not answer after the churn"
 		return report
@@ -141,30 +142,30 @@ func (churn *testChurn) settleBound() time.Duration {
 // closes without reading the answer. The bytes are already written when the close
 // happens, so the listener runs its whole request path against a client that has
 // gone away, which is the race being measured.
-func (churn *testChurn) abandon() error {
+func (churn *testChurn) abandon(parent context.Context) error {
 	target, err := churn.target()
 	if err != nil {
 		return err
 	}
 	dialer := &net.Dialer{Timeout: testSeconds(churn.contract.Deadlines.ClientDialSeconds)}
-	connection, err := tls.DialWithDialer(dialer, "tcp", target, churn.client.TLSConfig())
+	connection, err := (&tls.Dialer{NetDialer: dialer, Config: churn.client.TLSConfig()}).DialContext(parent, "tcp", target)
 	if err != nil {
 		return err
 	}
 	// The close is the point of the exercise, so it is deferred rather than
 	// conditional: a failed write still leaves a connection that went away.
-	defer connection.Close()
+	defer process.Close(connection)
 	if _, err := connection.Write([]byte(churn.rawRequest())); err != nil {
 		return err
 	}
-	_ = connection.SetDeadline(time.Now().Add(testSeconds(churn.contract.Deadlines.PluginWriteSeconds)))
+	process.Must(connection.SetDeadline(time.Now().Add(testSeconds(churn.contract.Deadlines.PluginWriteSeconds))))
 	return nil
 }
 
 // readiness makes one real call through the production client and reads the answer
 // within the fixture's bound.
-func (churn *testChurn) readiness() (testChurnAnswer, error) {
-	ctx, cancel := context.WithTimeout(context.Background(),
+func (churn *testChurn) readiness(parent context.Context) (testChurnAnswer, error) {
+	ctx, cancel := context.WithTimeout(parent,
 		testSeconds(churn.contract.Deadlines.PluginReadSeconds))
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, churn.address+churn.readyPath, nil)
@@ -173,11 +174,11 @@ func (churn *testChurn) readiness() (testChurnAnswer, error) {
 	}
 	// Its own connection, so the answer cannot come from a pooled one.
 	request.Close = true
-	response, err := churn.client.Do(request)
+	response, err := churn.client.Do(request) //nolint:bodyclose // the readiness helper closes the response before returning.
 	if err != nil {
 		return testChurnAnswer{}, err
 	}
-	defer response.Body.Close()
+	defer process.Close(response.Body)
 	body, err := readTestAnswer(response.Body, testChurnReadLimit)
 	if err != nil {
 		return testChurnAnswer{}, err
@@ -202,7 +203,7 @@ func (churn *testChurn) rawRequest() string {
 func (churn *testChurn) target() (string, error) {
 	parsed, err := url.Parse(churn.address)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", errTestChurn, err)
+		return "", fmt.Errorf("%w: %w", errTestChurn, err)
 	}
 	return net.JoinHostPort(parsed.Hostname(), parsed.Port()), nil
 }

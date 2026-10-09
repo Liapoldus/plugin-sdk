@@ -10,7 +10,11 @@ async function control(runtime: Runtime, path: string, body: unknown = {}): Prom
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  return { status: response.status, ...(await response.json()) };
+  const result: unknown = await response.json();
+  if (result === null || typeof result !== "object" || Array.isArray(result)) {
+    throw new Error("control response must be an object");
+  }
+  return { status: response.status, ...result };
 }
 
 describe("generic plugin Admin Surface REST", () => {

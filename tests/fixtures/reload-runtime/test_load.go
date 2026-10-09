@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"io"
 	"net"
 	"net/http"
@@ -104,7 +105,10 @@ func (load *testLoad) drainBound() time.Duration {
 // start builds the loaded surface: a production mutual-TLS listener served by a
 // handler that holds each request until the drain releases it, plus a production
 // mutual-TLS client that reads what the listener answers.
-func (load *testLoad) start() (string, error) {
+func (load *testLoad) start(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	load.mutex.Lock()
 	defer load.mutex.Unlock()
 	if load.started {
@@ -121,28 +125,28 @@ func (load *testLoad) start() (string, error) {
 		Clock:      load.clock,
 	})
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", errTestLoad, err)
+		return "", fmt.Errorf("%w: %w", errTestLoad, err)
 	}
 	// A shutdown releases the request being drained. Registering it with the server
 	// that serves the request is what makes the ordering deterministic: the handler
 	// cannot finish before the drain has begun, and the drain cannot finish before
 	// the handler has.
 	server.Server().RegisterOnShutdown(load.releaseRequests)
-	listener, err := net.Listen("tcp", net.JoinHostPort(testRotationListenHost, "0"))
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(testRotationListenHost, "0"))
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", errTestLoad, err)
+		return "", fmt.Errorf("%w: %w", errTestLoad, err)
 	}
 	client, err := load.dialer()
 	if err != nil {
-		_ = listener.Close()
-		return "", fmt.Errorf("%w: %v", errTestLoad, err)
+		process.Close(listener)
+		return "", fmt.Errorf("%w: %w", errTestLoad, err)
 	}
 	load.server = server
 	load.client = client
 	load.address = "https://" + listener.Addr().String()
 	load.started = true
 	go func() {
-		_ = server.Serve(listener)
+		process.Serve(server.Serve(listener))
 	}()
 	return load.address, nil
 }
@@ -165,7 +169,7 @@ func (load *testLoad) handle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", testControlMediaType)
 	w.Header().Set("Content-Length", fmt.Sprint(len(testLoadDocument)))
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(testLoadDocument))
+	process.Write(w, []byte(testLoadDocument))
 }
 
 // dialer builds the production client that stands in for the Core replica on the
@@ -185,7 +189,7 @@ func (load *testLoad) dialer() (*infrastructure.MutualTLSClient, error) {
 // grace, and reports what the production client actually received. It reports the
 // in-flight count it observed as well, so a drain that answered nothing because
 // nothing was in flight cannot be mistaken for a drain that delivered.
-func (load *testLoad) shutdown() testDrainReport {
+func (load *testLoad) shutdown(parent context.Context) testDrainReport {
 	load.mutex.Lock()
 	if !load.started {
 		load.mutex.Unlock()
@@ -194,7 +198,7 @@ func (load *testLoad) shutdown() testDrainReport {
 	// A pooled connection from an earlier request would hide the drain, so the
 	// drain's own request is guaranteed a fresh connection.
 	load.client.CloseIdleConnections()
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, load.address, nil)
+	request, err := http.NewRequestWithContext(parent, http.MethodGet, load.address, nil)
 	if err != nil {
 		load.mutex.Unlock()
 		return testDrainReport{failure: errTestLoad.Error()}
@@ -223,7 +227,7 @@ func (load *testLoad) shutdown() testDrainReport {
 	}
 
 	started := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), load.drainBound())
+	ctx, cancel := context.WithTimeout(parent, load.drainBound())
 	if report.failure == "" && load.server.GracefulShutdown(ctx) != nil {
 		// The production error deliberately carries no transport text.
 		report.failure = "the drain did not finish within the grace the contract allows"
@@ -247,7 +251,7 @@ func (load *testLoad) shutdown() testDrainReport {
 	// A drained surface has to stop answering on the address it was serving, so one
 	// more request is made against it. Anything other than a refusal means the
 	// listener is still there.
-	report.afterShutdown = load.probe()
+	report.afterShutdown = load.probe(parent)
 
 	load.mutex.Lock()
 	load.client.CloseIdleConnections()
@@ -269,18 +273,18 @@ type testLoadAnswer struct {
 // read makes one request through the production client and reads the response
 // within the fixture's read bound.
 func (load *testLoad) read(request *http.Request) testLoadAnswer {
-	response, err := load.client.Do(request)
+	response, err := load.client.Do(request) //nolint:bodyclose // read closes the response before returning.
 	if err != nil {
 		return testLoadAnswer{err: err}
 	}
-	defer response.Body.Close()
+	defer process.Close(response.Body)
 	body, readErr := readTestAnswer(response.Body, testLoadReadLimit)
 	return testLoadAnswer{status: response.StatusCode, body: body, err: readErr}
 }
 
 // probe asks a drained surface for a document and reports whether it was refused
 // or answered.
-func (load *testLoad) probe() string {
+func (load *testLoad) probe(parent context.Context) string {
 	load.mutex.Lock()
 	address := load.address
 	load.mutex.Unlock()
@@ -292,15 +296,17 @@ func (load *testLoad) probe() string {
 		return "refused"
 	}
 	defer client.CloseIdleConnections()
-	ctx, cancel := context.WithTimeout(context.Background(), testLoadEnteredTolerance)
+	ctx, cancel := context.WithTimeout(parent, testLoadEnteredTolerance)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return "refused"
 	}
-	if _, probeErr := client.Do(request); probeErr != nil {
+	response, probeErr := client.Do(request) //nolint:bodyclose // the probe closes the response immediately.
+	if probeErr != nil {
 		return "refused"
 	}
+	process.Close(response.Body)
 	return "answered"
 }
 
@@ -308,6 +314,7 @@ func (load *testLoad) probe() string {
 // asked for one and the fixture shutting down anyway both end here, so a load
 // listener is never left bound after the scenario that started it is over.
 func (load *testLoad) discard() {
+	parent := context.Background()
 	load.mutex.Lock()
 	server := load.server
 	client := load.client
@@ -322,9 +329,9 @@ func (load *testLoad) discard() {
 	if server == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), load.drainBound())
+	ctx, cancel := context.WithTimeout(parent, load.drainBound())
 	defer cancel()
-	_ = server.GracefulShutdown(ctx)
+	process.Must(server.GracefulShutdown(ctx))
 	if client != nil {
 		client.CloseIdleConnections()
 	}

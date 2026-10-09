@@ -10,6 +10,7 @@ package main
 // that is being measured is still measured through the production adapters.
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
 	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 )
 
 // testScenarioInputs is the read-only state the on-demand scenarios need in order
@@ -131,7 +133,8 @@ func (scenarios *testScenarios) shutdown() {
 	rotation, load := scenarios.rotation, scenarios.load
 	scenarios.mutex.Unlock()
 	if rotation != nil {
-		_, _, _ = rotation.stop()
+		_, _, err := rotation.stop(context.Background())
+		process.Must(err)
 	}
 	if load != nil {
 		load.discard()
@@ -222,7 +225,7 @@ func testDropConnection(w http.ResponseWriter) bool {
 		return false
 	}
 	if connection != nil {
-		_ = connection.Close()
+		process.Close(connection)
 	}
 	return true
 }

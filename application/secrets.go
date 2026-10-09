@@ -82,7 +82,9 @@ func NewSecretManager(configuration SecretManagerConfiguration) (*SecretManager,
 		grants:    make(map[string]trackedGrant),
 		order:     make([]string, 0, configuration.MaximumTrackedGrants),
 	}
-	manager.classifier, _ = configuration.Broker.(OutcomeClassifier)
+	if optional, ok := configuration.Broker.(OutcomeClassifier); ok {
+		manager.classifier = optional
+	}
 	return manager, nil
 }
 

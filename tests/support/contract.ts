@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import document from "../../infrastructure/assets/plugin-sdk/v1/http-contract.json";
 
 export const projectRoot = resolve(import.meta.dirname, "../..");
 
@@ -8,16 +8,25 @@ export const contractFile = resolve(
   "infrastructure/assets/plugin-sdk/v1/http-contract.json",
 );
 
-export const contract = JSON.parse(readFileSync(contractFile, "utf8"));
-
 export type Endpoint = { method: string; path: string };
 export type Problem = { status: number; code: string };
+
+// JSON imports infer the published artifact's complete shape. Widen only the
+// dictionaries whose keys are intentionally looked up at runtime.
+export const contract = {
+  ...document,
+  plugin: { ...document.plugin, endpoints: document.plugin.endpoints as typeof document.plugin.endpoints & Record<string, Endpoint> },
+  problems: document.problems as typeof document.problems & Record<string, Problem>,
+  errors: document.errors as typeof document.errors & Record<string, Problem>,
+  outcomes: document.outcomes as typeof document.outcomes & Record<string, string[]>,
+  outcomeProblems: document.outcomeProblems as typeof document.outcomeProblems & Record<string, string>,
+};
 
 export const endpointNames: string[] = Object.keys(contract.plugin.endpoints);
 export const problemKeys: string[] = Object.keys(contract.problems);
 export const errorKeys: string[] = Object.keys(contract.errors);
 export const outcomeFamilies: string[] = Object.keys(contract.outcomes);
-export const outcomeNames: string[] = Object.values(contract.outcomes).flat() as string[];
+export const outcomeNames: string[] = Object.values(contract.outcomes).flat();
 export const successOutcomes: string[] = contract.successOutcomes;
 
 export function endpoint(name: string): Endpoint {
@@ -25,7 +34,7 @@ export function endpoint(name: string): Endpoint {
   if (!found) {
     throw new Error(`the contract registers no endpoint named ${name}`);
   }
-  return found as Endpoint;
+  return found;
 }
 
 export function path(name: string): string {
@@ -41,7 +50,7 @@ export function transportProblem(key: string): Problem {
   if (!found) {
     throw new Error(`the contract registers no transport problem named ${key}`);
   }
-  return found as Problem;
+  return found;
 }
 
 export function error(key: string): Problem {
@@ -49,7 +58,7 @@ export function error(key: string): Problem {
   if (!found) {
     throw new Error(`the contract registers no error named ${key}`);
   }
-  return found as Problem;
+  return found;
 }
 
 export function problemOfOutcome(outcome: string): Problem {
@@ -77,7 +86,7 @@ export function outcomesOf(family: string): string[] {
   if (!found) {
     throw new Error(`the contract registers no outcome family named ${family}`);
   }
-  return found as string[];
+  return found;
 }
 
 export const mediaType = {
@@ -112,16 +121,21 @@ export const metrics = contract.plugin.responses.metrics;
 export const registrationRequired: string[] = contract.identity.registration.required;
 
 export const health = {
-  status: contract.plugin.responses.health.status as number,
+  status: contract.plugin.responses.health.status,
   body: contract.plugin.responses.health.body as Record<string, unknown>,
 };
 
 export function requiredFields(document: string): string[] {
-  const found = contract.plugin[document];
+  const documents: Record<string, { required: string[] }> = {
+    reloadRequest: contract.plugin.reloadRequest,
+    reloadAcknowledgement: contract.plugin.reloadAcknowledgement,
+    readiness: contract.plugin.readiness,
+  };
+  const found = documents[document];
   if (!found) {
     throw new Error(`the contract registers no document named ${document}`);
   }
-  return found.required as string[];
+  return found.required;
 }
 
 export function pullPath(generation: string): string {

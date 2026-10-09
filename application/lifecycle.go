@@ -75,9 +75,15 @@ func NewLifecycle(configuration LifecycleConfiguration) (*Lifecycle, error) {
 		observer: configuration.Observer,
 		identity: configuration.Identity,
 	}
-	lifecycle.classifier, _ = configuration.Source.(OutcomeClassifier)
-	lifecycle.readiness, _ = configuration.Observer.(ReadinessObserver)
-	lifecycle.pulls, _ = configuration.Observer.(PullFailureReporter)
+	if optional, ok := configuration.Source.(OutcomeClassifier); ok {
+		lifecycle.classifier = optional
+	}
+	if optional, ok := configuration.Observer.(ReadinessObserver); ok {
+		lifecycle.readiness = optional
+	}
+	if optional, ok := configuration.Observer.(PullFailureReporter); ok {
+		lifecycle.pulls = optional
+	}
 	return lifecycle, nil
 }
 

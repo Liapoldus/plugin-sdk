@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -140,7 +141,7 @@ func (actions *testAdminActions) HandleAdminAction(ctx context.Context, input pr
 	var request struct {
 		Mode string `json:"mode"`
 	}
-	_ = json.Unmarshal(input.Body, &request)
+	process.Must(json.Unmarshal(input.Body, &request))
 	switch request.Mode {
 	case "handler-error":
 		return presentation.AdminActionResponse{}, errors.New("secret-payload should be redacted")
@@ -353,13 +354,13 @@ func testTransportProblems(contract infrastructure.HTTPContract) (map[string]pre
 	// directory the harness happened to start the fixture in.
 	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "..",
 		"infrastructure", "assets", "plugin-sdk", "v1", "http-contract.json")
-	contents, err := os.ReadFile(path)
+	contents, err := os.ReadFile(path) //nolint:gosec // path is derived from the fixture source location and a fixed asset suffix.
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errTestAsset, err)
+		return nil, fmt.Errorf("%w: %w", errTestAsset, err)
 	}
 	var asset testAssetDocument
 	if err := json.Unmarshal(contents, &asset); err != nil {
-		return nil, fmt.Errorf("%w: %v", errTestAsset, err)
+		return nil, fmt.Errorf("%w: %w", errTestAsset, err)
 	}
 	if asset.ContractVersion != contract.ContractVersion {
 		// The fixture would otherwise be serving the refusal table of a contract

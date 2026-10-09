@@ -101,4 +101,4 @@ export const fixture = {
     instanceId: "instanceId",
     replicaId: "replicaId",
   },
-};
+} as const;

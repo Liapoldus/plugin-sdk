@@ -1,0 +1,33 @@
+{
+  "contractVersion": "liapoldus.plugin-sdk.loopback-plaintext.v2",
+  "enabledByDefault": false,
+  "transport": {
+    "network": "tcp",
+    "hostAddressMustBeLiteralIP": true,
+    "hostMustBeLoopback": true,
+    "remoteBindAllowed": false,
+    "tlsFailureFallback": false
+  },
+  "exposedEndpoint": {
+    "httpContractVersion": "liapoldus.plugin-sdk.http.v1",
+    "endpointKey": "health"
+  },
+  "notFoundProblemKey": "notFound",
+  "problemResponseField": "code",
+  "excludedEndpointKeys": [
+    "ready",
+    "identity",
+    "manifest",
+    "configSchema",
+    "reload",
+    "artifactStream",
+    "adminSurface",
+    "adminAction",
+    "metrics"
+  ],
+  "coreEndpointsAlwaysRequireMutualTLS": [
+    "configPull",
+    "secretGrant.issue",
+    "secretGrant.redemption"
+  ]
+}

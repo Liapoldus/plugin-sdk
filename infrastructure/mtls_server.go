@@ -102,13 +102,6 @@ type mutualTLSServerState struct {
 	config      *tls.Config
 }
 
-func maximumSeconds(first, second int) time.Duration {
-	if second > first {
-		first = second
-	}
-	return time.Duration(first) * time.Second
-}
-
 // NewMutualTLSServer builds the plugin-side HTTPS server. It refuses to build a
 // server that would accept a client without a certificate, that has no
 // revocation source to fail closed with, or that has no single registered Core
@@ -193,7 +186,7 @@ func (mutualTLS *MutualTLSServer) ListenAndServe(address string) error {
 	if mutualTLS == nil {
 		return ErrInvalidServerTLS
 	}
-	listener, err := net.Listen("tcp", address)
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", address)
 	if err != nil {
 		return err
 	}
@@ -249,8 +242,12 @@ func (mutualTLS *MutualTLSServer) RefreshCredentials() error {
 func (mutualTLS *MutualTLSServer) currentConfig() *tls.Config {
 	if credentials, err := mutualTLS.provider.Credentials(); err == nil && credentials != nil &&
 		credentials != mutualTLS.snapshot.Load().credentials {
-		_ = mutualTLS.reloadRevocation()
-		_ = mutualTLS.publish(credentials)
+		if err := mutualTLS.reloadRevocation(); err != nil {
+			return mutualTLS.snapshot.Load().config
+		}
+		if err := mutualTLS.publish(credentials); err != nil {
+			return mutualTLS.snapshot.Load().config
+		}
 	}
 	return mutualTLS.snapshot.Load().config
 }
@@ -268,7 +265,7 @@ func (mutualTLS *MutualTLSServer) publish(credentials *Credentials) error {
 		// The standard verifier already proved the chain and the client key usage
 		// because ClientAuth is RequireAndVerifyClientCert. Revocation and the
 		// registered replica identity are separate, additional gates.
-		VerifyPeerCertificate: mutualTLS.gate.verify,
+		VerifyConnection: mutualTLS.gate.verifyConnection,
 		// A rotation publishes a new configuration instead of mutating a
 		// configuration that another handshake may still be reading. crypto/tls
 		// consults this once per handshake and does not recurse.
@@ -361,19 +358,16 @@ type mutualTLSPeerGate struct {
 	clock      interfaces.Clock
 }
 
-func (gate *mutualTLSPeerGate) verify(rawCertificates [][]byte, verifiedChains [][]*x509.Certificate) error {
-	if gate == nil || len(rawCertificates) == 0 {
+func (gate *mutualTLSPeerGate) verifyConnection(state tls.ConnectionState) error {
+	if gate == nil || len(state.PeerCertificates) == 0 {
 		return ErrPeerNotAuthorized
 	}
-	leaf, err := x509.ParseCertificate(rawCertificates[0])
-	if err != nil {
-		return ErrPeerNotAuthorized
-	}
+	leaf := state.PeerCertificates[0]
 	now := clockNow(gate.clock)
 	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
 		return ErrPeerCertificateExpired
 	}
-	if err := gate.checkRevocation(leaf, verifiedChains); err != nil {
+	if err := gate.checkRevocation(leaf, state.VerifiedChains); err != nil {
 		return err
 	}
 	if !gate.authorizer.AuthorizePeer(leaf.Subject.CommonName, mutualTLSUniformResourceIdentifiers(leaf)) {
@@ -596,6 +590,29 @@ func (mutualTLS *MutualTLSClient) TLSConfig() *tls.Config {
 	return mutualTLS.snapshot.Load().config
 }
 
+// PresentsClientCertificateURI reports whether the currently published client
+// certificate contains the exact URI identity. It exposes no certificate or
+// key bytes and is used to bind generic replica lifecycle DTOs to mTLS identity.
+func (mutualTLS *MutualTLSClient) PresentsClientCertificateURI(expected string) bool {
+	if mutualTLS == nil || expected == "" {
+		return false
+	}
+	state := mutualTLS.snapshot.Load()
+	if state == nil || state.credentials == nil {
+		return false
+	}
+	certificate, ok := state.credentials.ClientCertificate()
+	if !ok || certificate.Leaf == nil {
+		return false
+	}
+	for _, uri := range certificate.Leaf.URIs {
+		if uri != nil && uri.String() == expected {
+			return true
+		}
+	}
+	return false
+}
+
 // currentConfig returns the configuration in force for the next connection. A
 // provider that cannot revalidate its material keeps the last validated set in
 // force rather than failing every control-plane call; revocation and the pinned
@@ -604,9 +621,13 @@ func (mutualTLS *MutualTLSClient) currentConfig() *tls.Config {
 	if credentials, err := mutualTLS.provider.Credentials(); err == nil && credentials != nil &&
 		credentials != mutualTLS.snapshot.Load().credentials {
 		if reloader, ok := mutualTLS.gate.revocation.(RevocationReloader); ok {
-			_ = reloader.Reload()
+			if err := reloader.Reload(); err != nil {
+				return mutualTLS.snapshot.Load().config
+			}
 		}
-		_ = mutualTLS.publish(credentials)
+		if err := mutualTLS.publish(credentials); err != nil {
+			return mutualTLS.snapshot.Load().config
+		}
 	}
 	return mutualTLS.snapshot.Load().config
 }
@@ -620,11 +641,11 @@ func (mutualTLS *MutualTLSClient) publish(credentials *Credentials) error {
 	// the server certificate as an additional gate on top of standard chain
 	// verification. There is no InsecureSkipVerify path.
 	config := &tls.Config{
-		MinVersion:            credentials.minimumTLSVersion,
-		RootCAs:               credentials.TrustPool(),
-		Certificates:          []tls.Certificate{clientCertificate},
-		ServerName:            mutualTLS.serverName,
-		VerifyPeerCertificate: mutualTLS.gate.verify,
+		MinVersion:       credentials.minimumTLSVersion,
+		RootCAs:          credentials.TrustPool(),
+		Certificates:     []tls.Certificate{clientCertificate},
+		ServerName:       mutualTLS.serverName,
+		VerifyConnection: mutualTLS.gate.verifyConnection,
 	}
 	mutualTLS.mutex.Lock()
 	defer mutualTLS.mutex.Unlock()

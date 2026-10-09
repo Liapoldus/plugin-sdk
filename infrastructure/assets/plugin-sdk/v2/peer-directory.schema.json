@@ -1,0 +1,270 @@
+{
+  "$defs": {
+    "contractId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._:/-]+$",
+      "type": "string"
+    },
+    "digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "identifier": {
+      "maxLength": 256,
+      "minLength": 1,
+      "not": {
+        "enum": [
+          ".",
+          ".."
+        ]
+      },
+      "pattern": "^[A-Za-z0-9._~-]+$",
+      "type": "string"
+    },
+    "link": {
+      "additionalProperties": false,
+      "properties": {
+        "carrier": {
+          "enum": [
+            "tcp",
+            "quic",
+            "unix",
+            "windows-named-pipe"
+          ]
+        },
+        "linkId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "placementRule": {
+          "enum": [
+            "same-placement",
+            "remote"
+          ]
+        },
+        "replicas": {
+          "items": {
+            "$ref": "#/$defs/replica"
+          },
+          "maxItems": 512,
+          "type": "array"
+        },
+        "requiredPeerContracts": {
+          "items": {
+            "$ref": "#/$defs/peerContractRange"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "securityProfile": {
+          "const": "mtls"
+        },
+        "targetInstanceId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "linkId",
+        "targetInstanceId",
+        "placementRule",
+        "carrier",
+        "securityProfile",
+        "requiredPeerContracts",
+        "replicas"
+      ],
+      "type": "object"
+    },
+    "peerContractRange": {
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "$ref": "#/$defs/contractId"
+        },
+        "maximumVersionExclusive": {
+          "$ref": "#/$defs/semver"
+        },
+        "minimumVersion": {
+          "$ref": "#/$defs/semver"
+        }
+      },
+      "required": [
+        "contractId",
+        "minimumVersion",
+        "maximumVersionExclusive"
+      ],
+      "type": "object"
+    },
+    "peerContractVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "$ref": "#/$defs/contractId"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        }
+      },
+      "required": [
+        "contractId",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "replica": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "eligibleUntil": {
+                "const": null
+              },
+              "endpoint": {
+                "const": ""
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "eligibility": {
+                "const": "ready"
+              }
+            },
+            "required": [
+              "eligibility"
+            ]
+          },
+          "then": {
+            "properties": {
+              "eligibleUntil": {
+                "type": "string"
+              },
+              "endpoint": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "eligibility": {
+          "enum": [
+            "ready",
+            "not-ready",
+            "draining",
+            "lease-expired",
+            "fenced",
+            "incompatible"
+          ]
+        },
+        "eligibleUntil": {
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "endpoint": {
+          "maxLength": 2048,
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/replicaIdentity"
+        },
+        "peerContracts": {
+          "items": {
+            "$ref": "#/$defs/peerContractVersion"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "weight": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "identity",
+        "endpoint",
+        "eligibility",
+        "eligibleUntil",
+        "weight",
+        "peerContracts"
+      ],
+      "type": "object"
+    },
+    "replicaIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "incarnationId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "instanceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "placementId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "replicaId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "instanceId",
+        "replicaId",
+        "incarnationId",
+        "placementId"
+      ],
+      "type": "object"
+    },
+    "semver": {
+      "maxLength": 128,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+      "type": "string"
+    }
+  },
+  "$id": "https://liapoldus.github.io/spec/plugin-sdk/v2/peer-directory.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "caller": {
+      "$ref": "#/$defs/replicaIdentity"
+    },
+    "contractVersion": {
+      "const": "liapoldus.plugin-sdk.peer-directory.v1"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "generation": {
+      "$ref": "#/$defs/identifier"
+    },
+    "issuedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "links": {
+      "items": {
+        "$ref": "#/$defs/link"
+      },
+      "maxItems": 256,
+      "type": "array"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "generation",
+    "issuedAt",
+    "expiresAt",
+    "caller",
+    "links"
+  ],
+  "title": "Plugin SDK peer directory v1",
+  "type": "object"
+}

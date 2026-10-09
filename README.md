@@ -10,16 +10,20 @@ gates перечислены в [TODO.md](https://github.com/Liapoldus/plugin-sd
 
 ## Единственный источник contract
 
-Нормативный contract — `infrastructure/assets/plugin-sdk/v1/http-contract.json`,
-встроенный в бинарник. Production-код читает из него маршруты, методы,
-media types, статусы, коды, лимиты, deadlines, обязательные поля документов,
-список generation-состояний, TLS floor, trust domain и полный словарь
-outcomes. Второго источника нет: `tests/integration/source-of-truth.test.ts`
-падает, если значение contract-строки появится в production Go, если asset
-разветвится или если в нём появится продуктовый документ.
+Нормативные константы HTTP v1 и v2 lifecycle/poll/loopback определены типизированным
+Go-кодом в `infrastructure/contract_definitions.go`. Production loaders сохраняют
+свои API и возвращают независимые maps/slices без разбора статического JSON.
+Маршруты, методы, media types, статусы, коды, лимиты, deadlines, TLS и outcomes
+публикуются в versioned JSON artifacts под `infrastructure/assets/plugin-sdk/`.
+`make contracts` детерминированно обновляет constants и schema документы;
+`make contracts-check` проверяет их без записи и входит в `make check`.
+Native Go tests проверяют JSON parity, validation и владение mutable values;
+TypeScript suite запрещает дублирование wire constants вне типизированного владельца.
 
-Поэтому ниже не приводятся literal-пути, лимиты и коды ответов: они живут в
-asset. Здесь описано только то, что меняет поведение потребителя.
+Две v2 JSON Schema определяются code-owned декларациями в `infrastructure/schemas.go`.
+`PeerDirectorySchema` / `ReplicaLifecycleSchema` и публичные JSON artifacts
+генерируются из этих деклараций; runtime не читает generated files.
+Ниже описано только то, что меняет поведение потребителя.
 
 ## Breaking change в Core
 
@@ -33,7 +37,7 @@ Core обязан:
 - **Pull exact generation.** На exact-generation pull публиковать все
   зарегистрированные contract-ом response headers, а не часть: `generation`,
   `sha256`, `schemaVersion`, `generationState`. Зарегистрированные значения
-  берутся из asset. `generationState` публикует ровно два durable slot-а:
+  берутся из типизированного contract. `generationState` публикует ровно два durable slot-а:
   `active` и `previous`. Любой другой slot, любое перечисление поколений и
   подстановка чужого generation не поддерживаются.
 - **Reload acknowledgement.** Возвращать типизированный ACK с пятью
@@ -103,6 +107,21 @@ certificate, pinned single peer identity, TLS floor из contract и отказ 
 HTTP redirect. Анонимный клиент, bearer token вместо сертификата и plaintext
 control URL отклоняются на handshake или на этапе конструирования. Bearer-only
 и plaintext downgrade-путей нет.
+
+Это ограничение относится к текущему production HTTP contract v1. Механика
+транспортной защиты принадлежит SDK, а не продуктовым плагинам. Отдельный
+loopback-only plaintext profile для локальной разработки реализован как
+явный opt-in SDK API `infrastructure.NewLoopbackHealthServer`; по умолчанию
+listener не создаётся. SDK принимает только TCP bind с literal loopback IP и
+сам публикует на отдельном listener только generic `GET /_liapoldus/v1/health`.
+Произвольный handler передать нельзя. `/ready` остаётся под mTLS, поскольку его
+ответ содержит identity replica и generation; остальные lifecycle, metadata,
+metrics, admin и artifact endpoints также доступны только через mTLS.
+Config pull и secret grants всегда требуют mTLS и недоступны через plaintext
+listener/client. TLS failure не включает plaintext fallback. mTLS обязателен
+для чувствительных операций и production Core↔plugin REST. Точные значения
+profile публикуются в generated versioned artifact
+[`loopback-plaintext-profile.json`](infrastructure/assets/plugin-sdk/v2/loopback-plaintext-profile.json).
 
 Credentials принадлежат оператору: SDK не встраивает CA, не генерирует
 сертификаты и не подставляет заглушку. `LoadCredentials` валидирует материал

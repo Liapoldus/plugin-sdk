@@ -16,6 +16,26 @@
 format и transport profiles — `pluginprotocol`. Общие contracts не копируются
 в plugin repos.
 
+TLS/mTLS — ответственность используемой библиотеки, не самого plugin:
+Plugin SDK защищает Core↔plugin REST, а `pluginprotocol` — peer-соединения.
+Плагин передаёт каждой библиотеке её security configuration/credentials через
+публичный API и использует готовые client/listener/call abstractions; он не
+реализует TLS, проверку сертификатов или revocation самостоятельно. Trust roots
+для двух независимых каналов остаются раздельными. В peer-протоколе явный
+plaintext допустим только для TCP loopback в development; remote и production
+требуют mTLS. SDK REST production contract v1 требует mTLS. Разработчик может
+явно выбрать opt-in loopback-only plaintext profile вызовом
+`infrastructure.NewLoopbackHealthServer`; по умолчанию такой listener не
+создаётся. SDK принимает только literal loopback TCP bind и сам ограничивает
+маршрут `GET /_liapoldus/v1/health`. `/ready`, identity, Manifest, config schema,
+Reload, metrics, admin actions и artifacts остаются mTLS-only. Exact config pull
+и secret-grant clients/endpoints всегда используют mTLS; config bytes и secret
+values никогда не выдаются через plaintext. TLS error не включает plaintext
+fallback. Канонические значения profile находятся в
+[`loopback-plaintext-profile.json`](../../../infrastructure/assets/plugin-sdk/v2/loopback-plaintext-profile.json).
+Plugin только явно вызывает API SDK; собственную обработку TLS, сертификатов
+или plaintext transport он не реализует.
+
 Каждый plugin владеет собственным Manifest, settings schema, capabilities,
 ошибками, Admin Surface и product data. Settings сохраняются Core в SQLite и
 получаются plugin-ом только pull-запросом точной immutable generation после

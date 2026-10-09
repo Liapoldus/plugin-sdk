@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -29,9 +30,11 @@ func (receiver *testArtifactReceiver) AcceptArtifact(ctx context.Context, input 
 	var metadata struct {
 		Mode string `json:"mode"`
 	}
-	_ = json.Unmarshal(input.Metadata, &metadata)
+	process.Must(json.Unmarshal(input.Metadata, &metadata))
 	if metadata.Mode == "early" {
-		_, _ = io.CopyN(io.Discard, input.Body, 1)
+		if _, err := io.CopyN(io.Discard, input.Body, 1); err != nil {
+			return presentation.ArtifactResponse{}, err
+		}
 		return acceptedArtifactResponse(), nil
 	}
 	if metadata.Mode == "wait-cancel" {
@@ -63,7 +66,7 @@ func (receiver *testArtifactReceiver) AcceptArtifact(ctx context.Context, input 
 }
 
 func acceptedArtifactResponse() presentation.ArtifactResponse {
-	body, _ := json.Marshal(map[string]any{"version": 1, "operationId": "fixture-operation", "state": "accepted"})
+	body := process.Marshal(map[string]any{"version": 1, "operationId": "fixture-operation", "state": "accepted"})
 	return presentation.ArtifactResponse{StatusCode: 202, Body: body}
 }
 

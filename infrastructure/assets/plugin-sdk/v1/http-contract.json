@@ -14,17 +14,31 @@
   "identity": {
     "replica": {
       "maximumBytes": 256,
-      "fields": ["instanceId", "replicaId"]
+      "fields": [
+        "instanceId",
+        "replicaId"
+      ]
     },
     "registration": {
       "mediaType": "application/json",
       "maximumBytes": 4096,
-      "required": ["contractVersion", "instanceId", "replicaId", "appliedGeneration", "ready"]
+      "required": [
+        "contractVersion",
+        "instanceId",
+        "replicaId",
+        "appliedGeneration",
+        "ready"
+      ]
     }
   },
   "plugin": {
     "responses": {
-      "health": { "status": 200, "body": { "status": "ok" } },
+      "health": {
+        "status": 200,
+        "body": {
+          "status": "ok"
+        }
+      },
       "contentTypes": {
         "json": "application/json",
         "metrics": "text/plain; version=0.0.4; charset=utf-8"
@@ -41,31 +55,79 @@
       }
     },
     "endpoints": {
-      "identity": { "method": "GET", "path": "/_liapoldus/v1/identity" },
-      "manifest": { "method": "GET", "path": "/_liapoldus/v1/manifest" },
-      "configSchema": { "method": "GET", "path": "/_liapoldus/v1/config-schema" },
-      "health": { "method": "GET", "path": "/_liapoldus/v1/health" },
-      "ready": { "method": "GET", "path": "/_liapoldus/v1/ready" },
-      "reload": { "method": "POST", "path": "/_liapoldus/v1/reload" },
-      "artifactStream": { "method": "POST", "path": "/_liapoldus/v1/artifact-stream" },
-      "adminSurface": { "method": "GET", "path": "/_liapoldus/v1/admin-surface" },
-      "adminAction": { "method": "POST", "path": "/_liapoldus/v1/admin-action/{page}/{action}" },
-      "metrics": { "method": "GET", "path": "/_liapoldus/v1/metrics" }
+      "adminAction": {
+        "method": "POST",
+        "path": "/_liapoldus/v1/admin-action/{page}/{action}"
+      },
+      "adminSurface": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/admin-surface"
+      },
+      "artifactStream": {
+        "method": "POST",
+        "path": "/_liapoldus/v1/artifact-stream"
+      },
+      "configSchema": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/config-schema"
+      },
+      "health": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/health"
+      },
+      "identity": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/identity"
+      },
+      "manifest": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/manifest"
+      },
+      "metrics": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/metrics"
+      },
+      "ready": {
+        "method": "GET",
+        "path": "/_liapoldus/v1/ready"
+      },
+      "reload": {
+        "method": "POST",
+        "path": "/_liapoldus/v1/reload"
+      }
     },
     "reloadRequest": {
       "mediaType": "application/json",
       "maximumBytes": 4096,
-      "required": ["generation", "sha256", "schemaVersion"]
+      "required": [
+        "generation",
+        "sha256",
+        "schemaVersion"
+      ]
     },
     "reloadAcknowledgement": {
       "mediaType": "application/json",
       "maximumBytes": 4096,
-      "required": ["generation", "sha256", "schemaVersion", "applied", "outcome"]
+      "required": [
+        "generation",
+        "sha256",
+        "schemaVersion",
+        "applied",
+        "outcome"
+      ]
     },
     "readiness": {
       "mediaType": "application/json",
       "maximumBytes": 4096,
-      "required": ["ready", "generation", "sha256", "schemaVersion", "pendingGeneration", "instanceId", "replicaId"]
+      "required": [
+        "ready",
+        "generation",
+        "sha256",
+        "schemaVersion",
+        "pendingGeneration",
+        "instanceId",
+        "replicaId"
+      ]
     },
     "manifest": {
       "mediaType": "application/json",
@@ -79,8 +141,14 @@
     "artifactStream": {
       "mediaType": "multipart/form-data",
       "metadataMediaType": "application/json",
-      "parts": ["metadata", "artifact"],
-      "partOrder": ["metadata", "artifact"],
+      "parts": [
+        "metadata",
+        "artifact"
+      ],
+      "partOrder": [
+        "metadata",
+        "artifact"
+      ],
       "maximumArtifactBytes": 134217728,
       "minimumArtifactBytes": 1,
       "maximumMetadataBytes": 65536,
@@ -91,17 +159,27 @@
       "filenameForwarded": false,
       "invocationContext": {
         "maximumBytes": 8192,
-        "required": ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "idempotencyKey", "requestId"],
-        "optional": ["ifMatch"],
+        "required": [
+          "callerId",
+          "instanceId",
+          "pageId",
+          "actionId",
+          "surfaceDigest",
+          "idempotencyKey",
+          "requestId"
+        ],
+        "optional": [
+          "ifMatch"
+        ],
         "headers": {
+          "actionId": "Liapoldus-Action",
           "callerId": "Liapoldus-Caller",
+          "idempotencyKey": "Idempotency-Key",
+          "ifMatch": "If-Match",
           "instanceId": "Liapoldus-Instance",
           "pageId": "Liapoldus-Page",
-          "actionId": "Liapoldus-Action",
-          "surfaceDigest": "Liapoldus-Surface-Digest",
-          "idempotencyKey": "Idempotency-Key",
           "requestId": "Liapoldus-Request-ID",
-          "ifMatch": "If-Match"
+          "surfaceDigest": "Liapoldus-Surface-Digest"
         }
       }
     },
@@ -117,22 +195,35 @@
       "maximumPageIdBytes": 128,
       "maximumActionIdBytes": 128,
       "pathSegmentPattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$",
-      "responseStatus": { "minimum": 200, "maximum": 599 },
+      "responseStatus": {
+        "minimum": 200,
+        "maximum": 599
+      },
       "deadlineSeconds": 30,
       "invocationContext": {
         "maximumBytes": 8192,
         "unknownHeaderPrefix": "Liapoldus-",
-        "required": ["callerId", "instanceId", "pageId", "actionId", "surfaceDigest", "requestId"],
-        "optional": ["idempotencyKey", "ifMatch"],
+        "required": [
+          "callerId",
+          "instanceId",
+          "pageId",
+          "actionId",
+          "surfaceDigest",
+          "requestId"
+        ],
+        "optional": [
+          "idempotencyKey",
+          "ifMatch"
+        ],
         "headers": {
+          "actionId": "Liapoldus-Action",
           "callerId": "Liapoldus-Caller",
+          "idempotencyKey": "Idempotency-Key",
+          "ifMatch": "If-Match",
           "instanceId": "Liapoldus-Instance",
           "pageId": "Liapoldus-Page",
-          "actionId": "Liapoldus-Action",
-          "surfaceDigest": "Liapoldus-Surface-Digest",
           "requestId": "Liapoldus-Request-ID",
-          "idempotencyKey": "Idempotency-Key",
-          "ifMatch": "If-Match"
+          "surfaceDigest": "Liapoldus-Surface-Digest"
         }
       }
     }
@@ -144,12 +235,15 @@
       "responseMediaType": "application/json",
       "maximumBytes": 262144,
       "requestMediaType": "application/json",
-      "generationStates": ["active", "previous"],
+      "generationStates": [
+        "active",
+        "previous"
+      ],
       "responseHeaders": {
         "generation": "Liapoldus-Generation",
-        "sha256": "Liapoldus-SHA256",
+        "generationState": "Liapoldus-Generation-State",
         "schemaVersion": "Liapoldus-Schema-Version",
-        "generationState": "Liapoldus-Generation-State"
+        "sha256": "Liapoldus-SHA256"
       }
     },
     "secretGrant": {
@@ -160,7 +254,11 @@
         "responseMediaType": "application/json",
         "maximumRequestBytes": 4096,
         "maximumResponseBytes": 4096,
-        "required": ["reference", "purpose", "generation"]
+        "required": [
+          "reference",
+          "purpose",
+          "generation"
+        ]
       },
       "redemption": {
         "method": "POST",
@@ -169,7 +267,9 @@
         "responseMediaType": "application/json",
         "maximumRequestBytes": 4096,
         "maximumResponseBytes": 65536,
-        "required": ["handle"]
+        "required": [
+          "handle"
+        ]
       },
       "handleMaximumLength": 512,
       "referenceMaximumLength": 512,
@@ -221,52 +321,129 @@
     ]
   },
   "problems": {
-    "notFound": { "status": 404, "code": "not_found" },
-    "methodNotAllowed": { "status": 405, "code": "method_not_allowed" },
-    "payloadOversized": { "status": 413, "code": "payload_oversized" },
-    "unsupportedMediaType": { "status": 415, "code": "unsupported_media_type" },
-    "internalError": { "status": 500, "code": "internal_error" }
+    "internalError": {
+      "status": 500,
+      "code": "internal_error"
+    },
+    "methodNotAllowed": {
+      "status": 405,
+      "code": "method_not_allowed"
+    },
+    "notFound": {
+      "status": 404,
+      "code": "not_found"
+    },
+    "payloadOversized": {
+      "status": 413,
+      "code": "payload_oversized"
+    },
+    "unsupportedMediaType": {
+      "status": 415,
+      "code": "unsupported_media_type"
+    }
   },
   "outcomeProblems": {
-    "invalidRequest": "invalidRequest",
-    "notPermitted": "notPermitted",
-    "unknownGeneration": "unknownGeneration",
-    "staleGeneration": "staleGeneration",
-    "generationConflict": "generationConflict",
+    "applyRejected": "applyRejected",
+    "cancelled": "cancelled",
+    "coreUnavailable": "coreUnavailable",
+    "deadlineExceeded": "deadlineExceeded",
     "digestMismatch": "digestMismatch",
-    "schemaVersionMismatch": "schemaVersionMismatch",
     "documentMalformed": "documentMalformed",
     "documentOversized": "documentOversized",
-    "applyRejected": "applyRejected",
-    "coreUnavailable": "coreUnavailable",
-    "cancelled": "cancelled",
-    "deadlineExceeded": "deadlineExceeded",
-    "grantUnknown": "grantUnknown",
+    "generationConflict": "generationConflict",
     "grantDenied": "grantDenied",
     "grantExpired": "grantExpired",
-    "grantSpent": "grantSpent"
+    "grantSpent": "grantSpent",
+    "grantUnknown": "grantUnknown",
+    "invalidRequest": "invalidRequest",
+    "notPermitted": "notPermitted",
+    "schemaVersionMismatch": "schemaVersionMismatch",
+    "staleGeneration": "staleGeneration",
+    "unknownGeneration": "unknownGeneration"
   },
-  "successOutcomes": ["applied", "alreadyActive", "succeeded", "granted"],
+  "successOutcomes": [
+    "applied",
+    "alreadyActive",
+    "succeeded",
+    "granted"
+  ],
   "errors": {
-    "invalidRequest": { "status": 400, "code": "invalid_request" },
-    "notPermitted": { "status": 403, "code": "not_permitted" },
-    "unknownGeneration": { "status": 404, "code": "generation_unknown" },
-    "staleGeneration": { "status": 409, "code": "generation_stale" },
-    "generationConflict": { "status": 409, "code": "generation_conflict" },
-    "notReady": { "status": 503, "code": "not_ready" },
-    "applyRejected": { "status": 422, "code": "configuration_rejected" },
-    "documentMalformed": { "status": 502, "code": "configuration_malformed" },
-    "documentOversized": { "status": 502, "code": "configuration_oversized" },
-    "digestMismatch": { "status": 502, "code": "digest_mismatch" },
-    "schemaVersionMismatch": { "status": 502, "code": "schema_version_mismatch" },
-    "coreUnavailable": { "status": 502, "code": "core_unavailable" },
-    "configurationUnavailable": { "status": 502, "code": "configuration_unavailable" },
-    "cancelled": { "status": 503, "code": "cancelled" },
-    "deadlineExceeded": { "status": 504, "code": "deadline_exceeded" },
-    "grantUnknown": { "status": 404, "code": "secret_grant_unknown" },
-    "grantDenied": { "status": 403, "code": "secret_grant_denied" },
-    "grantExpired": { "status": 403, "code": "secret_grant_expired" },
-    "grantSpent": { "status": 403, "code": "secret_grant_spent" }
+    "applyRejected": {
+      "status": 422,
+      "code": "configuration_rejected"
+    },
+    "cancelled": {
+      "status": 503,
+      "code": "cancelled"
+    },
+    "configurationUnavailable": {
+      "status": 502,
+      "code": "configuration_unavailable"
+    },
+    "coreUnavailable": {
+      "status": 502,
+      "code": "core_unavailable"
+    },
+    "deadlineExceeded": {
+      "status": 504,
+      "code": "deadline_exceeded"
+    },
+    "digestMismatch": {
+      "status": 502,
+      "code": "digest_mismatch"
+    },
+    "documentMalformed": {
+      "status": 502,
+      "code": "configuration_malformed"
+    },
+    "documentOversized": {
+      "status": 502,
+      "code": "configuration_oversized"
+    },
+    "generationConflict": {
+      "status": 409,
+      "code": "generation_conflict"
+    },
+    "grantDenied": {
+      "status": 403,
+      "code": "secret_grant_denied"
+    },
+    "grantExpired": {
+      "status": 403,
+      "code": "secret_grant_expired"
+    },
+    "grantSpent": {
+      "status": 403,
+      "code": "secret_grant_spent"
+    },
+    "grantUnknown": {
+      "status": 404,
+      "code": "secret_grant_unknown"
+    },
+    "invalidRequest": {
+      "status": 400,
+      "code": "invalid_request"
+    },
+    "notPermitted": {
+      "status": 403,
+      "code": "not_permitted"
+    },
+    "notReady": {
+      "status": 503,
+      "code": "not_ready"
+    },
+    "schemaVersionMismatch": {
+      "status": 502,
+      "code": "schema_version_mismatch"
+    },
+    "staleGeneration": {
+      "status": 409,
+      "code": "generation_stale"
+    },
+    "unknownGeneration": {
+      "status": 404,
+      "code": "generation_unknown"
+    }
   },
   "deadlines": {
     "pluginReloadSeconds": 30,
@@ -285,7 +462,12 @@
   },
   "logging": {
     "stream": "stdout",
-    "levels": ["debug", "info", "warn", "error"],
+    "levels": [
+      "debug",
+      "info",
+      "warn",
+      "error"
+    ],
     "defaultLevel": "info",
     "maximumFields": 24,
     "maximumKeyLength": 64,
@@ -322,7 +504,13 @@
     ]
   },
   "idempotency": {
-    "reloadKeyedBy": ["instanceId", "replicaId", "generation", "sha256", "schemaVersion"],
+    "reloadKeyedBy": [
+      "instanceId",
+      "replicaId",
+      "generation",
+      "sha256",
+      "schemaVersion"
+    ],
     "repeatOfActiveGeneration": "alreadyActive",
     "conflictingDescriptorForActiveGeneration": "generationConflict"
   }

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"io"
 	"log"
 	"net"
@@ -161,44 +162,44 @@ func main() {
 func run() error {
 	contract, err := infrastructure.LoadHTTPContract()
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 	contracts, err := presentationContracts(contract)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 	identities, err := newTestIdentities(contract)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 	core, err := newTestCore(contract)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 	clock := testClock{}
 
 	// Every listener is bound before anything is announced, so a harness that
 	// reads the ready line can never race a port that does not exist yet.
-	pluginListener, err := net.Listen("tcp", testLoopbackAddress)
+	pluginListener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", testLoopbackAddress)
 	if err != nil {
-		return fmt.Errorf("%w: plugin plaintext listener: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin plaintext listener: %w", errTestStart, err)
 	}
-	defer pluginListener.Close()
-	pluginTLSListener, err := net.Listen("tcp", testLoopbackAddress)
+	defer process.Close(pluginListener)
+	pluginTLSListener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", testLoopbackAddress)
 	if err != nil {
-		return fmt.Errorf("%w: plugin mutual-TLS listener: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin mutual-TLS listener: %w", errTestStart, err)
 	}
-	defer pluginTLSListener.Close()
-	coreListener, err := net.Listen("tcp", testLoopbackAddress)
+	defer process.Close(pluginTLSListener)
+	coreListener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", testLoopbackAddress)
 	if err != nil {
-		return fmt.Errorf("%w: Core listener: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core listener: %w", errTestStart, err)
 	}
-	defer coreListener.Close()
-	controlListener, err := net.Listen("tcp", testLoopbackAddress)
+	defer process.Close(coreListener)
+	controlListener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", testLoopbackAddress)
 	if err != nil {
-		return fmt.Errorf("%w: control listener: %v", errTestStart, err)
+		return fmt.Errorf("%w: control listener: %w", errTestStart, err)
 	}
-	defer controlListener.Close()
+	defer process.Close(controlListener)
 
 	pluginURL := "http://" + pluginListener.Addr().String()
 	pluginTLSURL := "https://" + pluginTLSListener.Addr().String()
@@ -210,37 +211,37 @@ func run() error {
 	// surface of the fixture is these two loaded sets and nothing else.
 	pluginCredentials, err := infrastructure.LoadCredentials(contract, identities.plugin)
 	if err != nil {
-		return fmt.Errorf("%w: plugin credentials: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin credentials: %w", errTestStart, err)
 	}
 	pluginProvider, err := infrastructure.NewStaticCredentialsProvider(pluginCredentials)
 	if err != nil {
-		return fmt.Errorf("%w: plugin credentials: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin credentials: %w", errTestStart, err)
 	}
 	coreCredentials, err := infrastructure.LoadCredentials(contract, identities.core)
 	if err != nil {
-		return fmt.Errorf("%w: Core credentials: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core credentials: %w", errTestStart, err)
 	}
 	coreProvider, err := infrastructure.NewStaticCredentialsProvider(coreCredentials)
 	if err != nil {
-		return fmt.Errorf("%w: Core credentials: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core credentials: %w", errTestStart, err)
 	}
 	// The revocation decision that gates a handshake comes from the same loaded
 	// authorities that admitted the chain, so trust and revocation are one
 	// decision rather than two that can disagree.
 	pluginRevocation, err := newTestRevocation(pluginCredentials, identities.revocation, clock)
 	if err != nil {
-		return fmt.Errorf("%w: plugin revocation: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin revocation: %w", errTestStart, err)
 	}
 	coreRevocation, err := newTestRevocation(coreCredentials, identities.revocation, clock)
 	if err != nil {
-		return fmt.Errorf("%w: Core revocation: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core revocation: %w", errTestStart, err)
 	}
 
 	// Instrumentation is wired before the use cases, because both the lifecycle
 	// and the secret manager require an observer and refuse to build without one.
 	collector, err := infrastructure.NewObserverPrometheusCollector(contract)
 	if err != nil {
-		return fmt.Errorf("%w: metrics collector: %v", errTestStart, err)
+		return fmt.Errorf("%w: metrics collector: %w", errTestStart, err)
 	}
 	// The contract sends production logs to stdout. This fixture reserves stdout
 	// for its single ready line, so the SDK's structured stream is written to
@@ -248,7 +249,7 @@ func run() error {
 	// changes neither the contract nor the logger.
 	logger, err := infrastructure.NewJSONLogger(contract, os.Stderr)
 	if err != nil {
-		return fmt.Errorf("%w: logger: %v", errTestStart, err)
+		return fmt.Errorf("%w: logger: %w", errTestStart, err)
 	}
 	recorder, err := application.NewRecorder(application.RecorderConfiguration{
 		Sink: testMetricsSink{collector: collector},
@@ -260,7 +261,7 @@ func run() error {
 		MaximumKindLength: testMaximumKindLength,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: recorder: %v", errTestStart, err)
+		return fmt.Errorf("%w: recorder: %w", errTestStart, err)
 	}
 	observer, err := application.NewLoggingObserver(application.LoggingObserverConfiguration{
 		Logger:              logger,
@@ -270,7 +271,7 @@ func run() error {
 		MaximumValueLength:  contract.Logging.MaximumValueLength,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: logging observer: %v", errTestStart, err)
+		return fmt.Errorf("%w: logging observer: %w", errTestStart, err)
 	}
 	fanout := application.Observers{recorder, observer}
 
@@ -285,16 +286,16 @@ func run() error {
 			Clock:      clock,
 		})
 	if err != nil {
-		return fmt.Errorf("%w: plugin to Core client: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin to Core client: %w", errTestStart, err)
 	}
 	source, err := infrastructure.NewCoreConfigurationSource(contract, coreURL, pluginToCore)
 	if err != nil {
-		return fmt.Errorf("%w: configuration source: %v", errTestStart, err)
+		return fmt.Errorf("%w: configuration source: %w", errTestStart, err)
 	}
 	broker, err := infrastructure.NewCoreSecretBroker(contract, coreURL, pluginToCore,
 		testTrackedGrants)
 	if err != nil {
-		return fmt.Errorf("%w: secret broker: %v", errTestStart, err)
+		return fmt.Errorf("%w: secret broker: %w", errTestStart, err)
 	}
 
 	applier := newTestApplier(testApplyFailBase)
@@ -305,7 +306,7 @@ func run() error {
 		Observer: fanout,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: lifecycle: %v", errTestStart, err)
+		return fmt.Errorf("%w: lifecycle: %w", errTestStart, err)
 	}
 	secrets, err := application.NewSecretManager(application.SecretManagerConfiguration{
 		Broker:               broker,
@@ -315,7 +316,7 @@ func run() error {
 		MaximumTrackedGrants: testTrackedGrants,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: secret manager: %v", errTestStart, err)
+		return fmt.Errorf("%w: secret manager: %w", errTestStart, err)
 	}
 	applier.beforeApply = func(ctx context.Context, configuration models.Configuration) (string, error) {
 		grant, issueErr := secrets.IssueGrant(ctx, models.SecretGrantRequest{
@@ -351,7 +352,7 @@ func run() error {
 		AdminActions: adminActions,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: handler set: %v", errTestStart, err)
+		return fmt.Errorf("%w: handler set: %w", errTestStart, err)
 	}
 
 	// The Core replica. The production plugin-side server is reused symmetrically
@@ -368,7 +369,7 @@ func run() error {
 			Clock:      clock,
 		})
 	if err != nil {
-		return fmt.Errorf("%w: Core server: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core server: %w", errTestStart, err)
 	}
 	// The connection-drop switch and the connection count both hang off the
 	// plugin's mutual-TLS listener only. The switch wraps the production handler
@@ -387,7 +388,7 @@ func run() error {
 			Clock:      clock,
 		})
 	if err != nil {
-		return fmt.Errorf("%w: plugin server: %v", errTestStart, err)
+		return fmt.Errorf("%w: plugin server: %w", errTestStart, err)
 	}
 	pluginServer.Server().ConnState = connections.hook
 
@@ -402,22 +403,22 @@ func run() error {
 			Clock:      clock,
 		})
 	if err != nil {
-		return fmt.Errorf("%w: Core to plugin transport: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core to plugin transport: %w", errTestStart, err)
 	}
 	artifactStatus := &testArtifactStatusOverride{transport: coreToPluginTLS}
 	coreToPlugin, err := infrastructure.NewPluginClient(contract, pluginTLSURL,
 		artifactStatus, identities.pluginPeer)
 	if err != nil {
-		return fmt.Errorf("%w: Core to plugin client: %v", errTestStart, err)
+		return fmt.Errorf("%w: Core to plugin client: %w", errTestStart, err)
 	}
 
 	generations, err := publishTestGenerations(core)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 	readyEndpoint, err := contract.Endpoint("ready")
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 
 	// The control surface drives the same SDK client and the same secret use case a
@@ -444,7 +445,7 @@ func run() error {
 
 	unsafeControlRefused, err := testUnsafeControlRefused(contract)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 
 	// The plaintext mirror and the control surface are the two fixture-only
@@ -481,7 +482,7 @@ func run() error {
 		contract.Plugin.Readiness.MaximumBytes, coreCredentials,
 		testSeconds(contract.Deadlines.PluginReadSeconds))
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 
 	revokedRejected, err := testMutualTLSRejectsRevoked(coreToPlugin,
@@ -489,7 +490,7 @@ func run() error {
 		contract.Plugin.Readiness.MaximumBytes, coreCredentials, identities.revoked,
 		testSeconds(contract.Deadlines.PluginReadSeconds))
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 
 	wrongIdentityRejected, err := testMutualTLSRejectsWrongIdentity(coreToPlugin,
@@ -497,7 +498,7 @@ func run() error {
 		contract.Plugin.Readiness.MaximumBytes, coreCredentials, identities.impostor,
 		testSeconds(contract.Deadlines.PluginReadSeconds))
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 
 	expiredRejected, err := testMutualTLSRejectsExpired(coreToPlugin,
@@ -505,7 +506,7 @@ func run() error {
 		contract.Plugin.Readiness.MaximumBytes, coreCredentials, identities.expired,
 		testSeconds(contract.Deadlines.PluginReadSeconds))
 	if err != nil {
-		return fmt.Errorf("%w: %v", errTestStart, err)
+		return fmt.Errorf("%w: %w", errTestStart, err)
 	}
 
 	ready, err := json.Marshal(testReadyLine{
@@ -527,13 +528,15 @@ func run() error {
 		CorePlaneClientKeyPEM:         string(identities.plugin.ClientKeyPEM),
 	})
 	if err != nil {
-		return fmt.Errorf("%w: ready line: %v", errTestStart, err)
+		return fmt.Errorf("%w: ready line: %w", errTestStart, err)
 	}
-	fmt.Fprintf(os.Stdout, "%s\n", ready)
+	if _, err := fmt.Fprintf(os.Stdout, "%s\n", ready); err != nil {
+		return fmt.Errorf("%w: write ready line: %w", errTestStart, err)
+	}
 	// stdout is closed after the single ready line, so a stray write from any
 	// later code path cannot add a second line for a harness to misparse.
 	if closer, ok := any(os.Stdout).(io.Closer); ok {
-		_ = closer.Close()
+		process.Close(closer)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -541,7 +544,7 @@ func run() error {
 	select {
 	case <-ctx.Done():
 	case served := <-failures:
-		return fmt.Errorf("%w: listener stopped: %v", errTestStart, served)
+		return fmt.Errorf("%w: listener stopped: %w", errTestStart, served)
 	}
 
 	// Each mutual-TLS listener is stopped by the adapter that owns its own
@@ -554,10 +557,10 @@ func run() error {
 	// bound past the process exit, so the scenarios are torn down with the rest of
 	// the surfaces rather than left for the operating system to reclaim.
 	scenarios.shutdown()
-	_ = pluginServer.GracefulShutdown(shutdown)
-	_ = coreServer.GracefulShutdown(shutdown)
-	_ = plaintext.Shutdown(shutdown)
-	_ = controlServer.Shutdown(shutdown)
+	process.Must(pluginServer.GracefulShutdown(shutdown))
+	process.Must(coreServer.GracefulShutdown(shutdown))
+	process.Must(plaintext.Shutdown(shutdown))
+	process.Must(controlServer.Shutdown(shutdown))
 	coreToPlugin.CloseIdleConnections()
 	pluginToCore.CloseIdleConnections()
 	return nil
@@ -633,14 +636,20 @@ func testMutualTLSRejectsAnonymous(client *infrastructure.PluginClient,
 		},
 		Timeout: timeout,
 	}
-	response, err := anonymous.Get("https://" + address + readyPath)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://"+address+readyPath, nil)
+	if err != nil {
+		return true, nil
+	}
+	response, err := anonymous.Do(request) //nolint:bodyclose // the response body is closed before this probe returns.
 	if err != nil {
 		// The listener is already proven live, so a failure here can only be the
 		// refused handshake this check exists to observe.
 		return true, nil
 	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, readyMaximum))
+	defer process.Close(response.Body)
+	if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, readyMaximum)); err != nil {
+		panic(err)
+	}
 	return response.StatusCode >= 400, nil
 }
 
@@ -718,7 +727,7 @@ func testMutualTLSRefusesCredential(client *infrastructure.PluginClient,
 	}
 	keyPair, err := tls.X509KeyPair(presented.ClientCertificatePEM, presented.ClientKeyPEM)
 	if err != nil {
-		return false, fmt.Errorf("%w: probe credential: %v", errTestStart, err)
+		return false, fmt.Errorf("%w: probe credential: %w", errTestStart, err)
 	}
 
 	ready, err := testProbeReadiness(client, timeout)
@@ -756,14 +765,20 @@ func testMutualTLSRefusesCredential(client *infrastructure.PluginClient,
 	// before a configuration generation has been acknowledged and readiness
 	// answers 503 until one is. That would make this check report a refusal for
 	// every credential it was ever given.
-	response, err := offered.Get("https://" + address + readyPath)
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://"+address+readyPath, nil)
+	if err != nil {
+		return true, nil
+	}
+	response, err := offered.Do(request) //nolint:bodyclose // the response body is closed before this probe returns.
 	if err != nil {
 		// The listener is already proven live with a good credential, so a
 		// failure here can only be the refusal this check exists to observe.
 		return true, nil
 	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, readyMaximum))
+	defer process.Close(response.Body)
+	if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, readyMaximum)); err != nil {
+		panic(err)
+	}
 	return false, nil
 }
 

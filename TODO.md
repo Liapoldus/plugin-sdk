@@ -295,7 +295,84 @@ schema не копируются hardcode-строками по consumers.
 - [x] Hosted CI на согласованной опубликованной ревизии и release provenance:
   macOS/Ubuntu tag CI прошли; SDK `v1.0.1` и VitePress pins опубликованы.
 
-## Отложено до v2: embedding и in-process adapter
+## V2 — регистрация replicas и rollout (вне v1 gates)
+
+- [x] Owner contract и SDK-клиент REST registration/renew/deregister с per-replica mTLS,
+  SAN/SPIFFE binding, immutable incarnation/endpoints/placement, SemVer,
+  release digest и generic opaque contract claims. Pairwise release compatibility
+  требует взаимного принятия всех advertised versions для разных digest и
+  закрывается при отсутствии evidence. Lease 30 s, renew 10 s; после
+  истечения fenced до новой регистрации. DTO/schema: `infrastructure/assets/plugin-sdk/v2/replica-lifecycle{,.schema}.json`;
+  API и semantics: `docs/site/plugins/architecture.md`. Gate run by TS child-process
+  fixture covers registration, expiry, reconnect, spoofing, immutable metadata,
+  same/mixed-release compatibility, `replica_not_registered` для неизвестной и
+  повторно снятой incarnation, локальный отказ по `maximumContractsPerList` и
+  `maximumPeerEndpoints`, а также cancellation: отменённый register/renew/deregister
+  падает без replay и не оставляет следа на стороне Core.
+  Evidence: `tests/integration/replica-lifecycle.test.ts`.
+- [x] Versioned peer-directory v1 DTO/schema, строгая bounded JSON validation
+  и deterministic resolver: placement/carrier rules, lease/contract eligibility,
+  ordinal weighting и stable-key weighted rendezvous без transport fallback.
+  Bounds проверены через реальный дочерний процесс: >1 MiB документ, >256 links,
+  >512 replicas,   >64 contracts, weight вне 1..100, TTL >30 s, routing key >256 B,
+  дубликаты linkId и конфликтующие digests.
+  Контракт и compatibility semantics: `docs/site/plugins/architecture.md`;
+  schema: `infrastructure/assets/plugin-sdk/v2/peer-directory.schema.json`.
+  Evidence: TS integration tests under `tests/integration/peer-directory.test.ts`.
+- [x] Зафиксировать owner wire contract и SDK client для защищённого
+  peer-directory long-poll: initial snapshot, strong ETag/`If-None-Match`,
+  `200` при смене, пустой `304` без изменений, wait до 20 s, request deadline
+  25 s, cancellation без automatic retry, лимит ответа 1 MiB и binding caller
+  к URI SAN клиентского сертификата. Источник:
+  `infrastructure/assets/plugin-sdk/v2/peer-directory-poll.json`; client:
+  `infrastructure.PeerDirectoryClient`; TS child-process conformance:
+  `tests/integration/replica-lifecycle.test.ts` и
+  `tests/integration/peer-directory-poll.test.ts`.
+- [ ] Cross-repository Core↔SDK gate: Core repository now contains local WIP for
+  authenticated replica registration, durable lease admission, peer-directory
+  publication and restart fencing. Это ещё не подтверждённый совместимый релиз:
+  API/SDK revisions не закреплены опубликованными commits, а общий clean
+  child-process gate не прошёл. Проверить Core authority per caller, stale
+  incarnation, expiry/reconnect, restart recovery, revoked identity и отсутствие
+  carrier fallback после согласования owner revisions. SDK предоставляет client
+  contract, но не реализует Core endpoint, не делает peer Call и не зависит от
+  `pluginprotocol`.
+  Повторная проверка 2026-10-08 уточнила блокер: опубликованные теги SDK
+  `v1.0.0` и `v1.0.1` не содержат registration/peer-directory API; `v1.0.1`
+  отличается от `v1.0.0` только этим TODO, а удалённый `main` совпадает с
+  `v1.0.1` по коду. Core закреплён на `v1.0.0`, поэтому чистый
+  `GOWORK=off go build ./...` падает на отсутствующих SDK types. Нужные SDK
+  реализация и контракты существуют только в локальном dirty/untracked WIP;
+  его workspace-сборка не считается release evidence. Gate закрывается после
+  завершения SDK owner slice, опубликования совместимой immutable revision и
+  Core build/test против точного pin. До этого не менять Core на branch/local
+  `replace` и не считать cross-repository gate пройденным.
+- [x] Добавить generic pairwise release-cohort compatibility поверх opaque
+  `advertisedContracts`/`acceptedContracts`, не связывая SDK с продуктом.
+  `models.ReleaseCohortCompatible` проверяется child-process fixture для
+  same digest, взаимных диапазонов, одностороннего acceptance и отсутствующего
+  evidence. Core activation/rollout orchestration и partial ACK/drain остаются
+  владельческой работой Core, не SDK.
+
+## V2 — явно настраиваемые transport security profiles
+
+- [x] Opt-in plaintext profile для SDK REST ограничен development loopback TCP.
+  Default выключен: отдельный listener создаётся только явным вызовом SDK API;
+  API не принимает произвольный handler и сам обслуживает только generic health.
+  Bind требует literal loopback IP и SDK отклоняет hostname, wildcard и remote
+  IP, а `Serve` повторно проверяет фактически bound listener. Любые другие path
+  и method завершаются общим `404`. Production mTLS HTTP contract v1 не менялся;
+  config pull/secret-grant clients и endpoints остаются на mTLS, TLS failure не
+  включает plaintext fallback. Versioned profile:
+  `infrastructure/assets/plugin-sdk/v2/loopback-plaintext-profile.json`;
+  child-process conformance: `tests/integration/loopback-plaintext.test.ts`.
+  Документация: `docs/site/plugins/architecture.md` и `development.md`.
+  Local evidence: `make check` passed (19 Vitest files / 227 tests,
+  `go build ./...`, `go vet ./...`); targeted config-pull gate
+  `npx vitest run tests/integration/reload-pull.test.ts` passed (74 tests).
+  `git diff --check` passed. Это локальная проверка, не hosted CI/release gate.
+
+## V3 — embedding и in-process adapter
 
 - [ ] Сохранить REST+mTLS adapter для plugin processes и добавить явно
   выбираемый in-process adapter с теми же lifecycle models и observable

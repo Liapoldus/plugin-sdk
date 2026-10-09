@@ -63,7 +63,7 @@ describe("a request dropped after the listener has accepted it", () => {
         generation: fixture.generations.dropped,
       });
 
-      expect(answer.status, `drop ${attempt} must not be acknowledged`).toBeGreaterThanOrEqual(400);
+      expect(answer.status, `drop ${String(attempt)} must not be acknowledged`).toBeGreaterThanOrEqual(400);
       expect(answer.body.applied, "a dropped request applies nothing").toBe(false);
       expect(
         answer.body.outcome,

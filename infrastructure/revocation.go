@@ -6,7 +6,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -237,7 +236,7 @@ func (revocation *Revocation) loadLocked() error {
 		lists = append(lists, list)
 	}
 	for _, path := range revocation.files {
-		contents, err := os.ReadFile(path)
+		contents, err := readMaterialFile(path)
 		if err != nil || len(contents) == 0 {
 			return ErrRevocationUnavailable
 		}

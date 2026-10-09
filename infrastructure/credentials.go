@@ -466,7 +466,7 @@ func credentialMaterialBytes(path string, inline []byte, required bool) ([]byte,
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > credentialsMaximumMaterialBytes {
 		return nil, ErrCredentialsUnavailable
 	}
-	contents, err := os.ReadFile(path)
+	contents, err := readMaterialFile(path)
 	if err != nil || len(contents) == 0 {
 		return nil, ErrCredentialsUnavailable
 	}

@@ -126,7 +126,7 @@ func (source *CoreConfigurationSource) PullExact(ctx context.Context, generation
 	if err != nil {
 		return interfaces.PullResult{}, err
 	}
-	defer response.Body.Close()
+	defer closeResource(response.Body)
 
 	if response.StatusCode != http.StatusOK {
 		return interfaces.PullResult{}, source.refusal(response)

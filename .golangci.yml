@@ -1,0 +1,49 @@
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+  concurrency: 1
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - contextcheck
+    - durationcheck
+    - errcheck
+    - errorlint
+    - fatcontext
+    - forcetypeassert
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - nilerr
+    - nilnesserr
+    - noctx
+    - nolintlint
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - unconvert
+    - unused
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    generated: disable
+    presets: []
+    paths:
+      - node_modules
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: disable
+    paths: []

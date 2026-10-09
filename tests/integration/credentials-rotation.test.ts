@@ -47,7 +47,7 @@ function observePeer(url: URL, ready: ReadyLine): Promise<PeerObservation> {
     };
     socket.setTimeout(observationTimeoutMilliseconds);
     socket.once("secureConnect", () => {
-      const certificate = socket.getPeerCertificate() as { serialNumber?: string; subject?: string };
+      const certificate = socket.getPeerCertificate();
       socket.write(
         `GET / HTTP/1.1\r\nHost: ${fixture.credentials.serverName}\r\nConnection: close\r\n\r\n`,
       );
@@ -60,15 +60,14 @@ function observePeer(url: URL, ready: ReadyLine): Promise<PeerObservation> {
           status = Number(raw.split(" ")[1] ?? 0);
         }
       });
-      socket.once("end", () =>
-        settle({
-          serial: certificate.serialNumber ?? "",
-          subject: certificate.subject ?? "",
+      socket.once("end", () => { settle({
+          serial: certificate.serialNumber,
+          subject: String(certificate.subject.CN ?? ""),
           status,
-        }),
+        }); },
       );
     });
-    socket.once("timeout", () => fail(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })));
+    socket.once("timeout", () => { fail(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })); });
     socket.once("error", fail);
   });
 }
@@ -108,14 +107,13 @@ function observeWithoutCredential(url: URL, ready: ReadyLine): Promise<string> {
         raw += chunk;
         const status = Number(raw.split(" ")[1] ?? 0);
         if (status > 0) {
-          settle(`answered ${status}`);
+          settle(`answered ${String(status)}`);
         }
       });
-      socket.once("end", () => settle(`answered ${Number(raw.split(" ")[1] ?? 0)}`));
+      socket.once("end", () => { settle(`answered ${String(Number(raw.split(" ")[1] ?? 0))}`); });
     });
-    socket.once("timeout", () => settle("timeout"));
-    socket.once("error", (failure: NodeJS.ErrnoException) =>
-      settle(failure.code ?? failure.message),
+    socket.once("timeout", () => { settle("timeout"); });
+    socket.once("error", (failure: NodeJS.ErrnoException) => { settle(failure.code ?? failure.message); },
     );
   });
 }

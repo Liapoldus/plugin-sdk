@@ -41,13 +41,13 @@ afterAll(async () => {
   await runtime.stop();
 });
 
-function endpoint(name: string): { host: string; port: number } {
+function endpoint(): { host: string; port: number } {
   const url = new URL(runtime.info.pluginHTTPSURL);
   return { host: url.hostname, port: Number(url.port) };
 }
 
-function handshake(options: { maxVersion?: string; minVersion?: string }): Promise<string> {
-  const { host, port } = endpoint("ready");
+function handshake(options: { maxVersion?: tls.SecureVersion; minVersion?: tls.SecureVersion }): Promise<string> {
+  const { host, port } = endpoint();
   return new Promise<string>((resolve) => {
     const socket = tls.connect({
       host,
@@ -61,16 +61,15 @@ function handshake(options: { maxVersion?: string; minVersion?: string }): Promi
       resolve(result);
     };
     socket.setTimeout(5000);
-    socket.once("secureConnect", () => settle(`connected ${socket.getProtocol()}`));
-    socket.once("timeout", () => settle("timeout"));
-    socket.once("error", (failure: NodeJS.ErrnoException) =>
-      settle(failure.code ?? failure.message),
+    socket.once("secureConnect", () => { settle(`connected ${String(socket.getProtocol())}`); });
+    socket.once("timeout", () => { settle("timeout"); });
+    socket.once("error", (failure: NodeJS.ErrnoException) => { settle(failure.code ?? failure.message); },
     );
   });
 }
 
 function plainRequest(): Promise<string> {
-  const { host, port } = endpoint("ready");
+  const { host, port } = endpoint();
   return new Promise<string>((resolve) => {
     const socket = net.connect(port, host, () => {
       socket.write(`GET ${path("ready")} HTTP/1.1\r\nHost: liapoldus\r\nConnection: close\r\n\r\n`);
@@ -85,13 +84,13 @@ function plainRequest(): Promise<string> {
       resolve(received);
     };
     socket.once("end", settle);
-    socket.once("error", (failure: NodeJS.ErrnoException) => resolve(failure.code ?? ""));
+    socket.once("error", (failure: NodeJS.ErrnoException) => { resolve(failure.code ?? ""); });
     setTimeout(settle, 5000);
   });
 }
 
 function anonymousRequest(): Promise<string> {
-  const { host, port } = endpoint("ready");
+  const { host, port } = endpoint();
   return new Promise<string>((resolve) => {
     const request = https.request(
       {
@@ -104,11 +103,10 @@ function anonymousRequest(): Promise<string> {
       },
       (response) => {
         response.resume();
-        resolve(`answered ${response.statusCode ?? 0}`);
+        resolve(`answered ${String(response.statusCode ?? 0)}`);
       },
     );
-    request.once("error", (failure: NodeJS.ErrnoException) =>
-      resolve(failure.code ?? failure.message),
+    request.once("error", (failure: NodeJS.ErrnoException) => { resolve(failure.code ?? failure.message); },
     );
     request.end();
   });
@@ -303,7 +301,7 @@ describe("the log a replica publishes", () => {
       }
       expect(String(line.kind)).toBeTruthy();
       expect(String(line.level)).toBeTruthy();
-      expect(contract.logging.levels as string[]).toContain(String(line.level));
+      expect(contract.logging.levels).toContain(String(line.level));
       expect(String(line.stream)).toBe(contract.logging.stream);
     }
 
@@ -337,10 +335,10 @@ describe("the log a replica publishes", () => {
       .map((line) => JSON.parse(line) as Record<string, unknown>)
       .filter((event) => event.outcome === outcome);
     expect(events).toHaveLength(1);
-    expect(events[0].kind).toBe("reload");
+    expect(events[0]?.kind).toBe("reload");
   });
 
-  it("keeps a log line inside the bounds the contract publishes", async () => {
+  it("keeps a log line inside the bounds the contract publishes", () => {
     const limits = contract.logging as unknown as Record<string, unknown>;
 
     for (const line of runtime.stderr.split("\n").filter((each) => each.trim().length > 0)) {

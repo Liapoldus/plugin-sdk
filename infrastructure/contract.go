@@ -2,8 +2,6 @@ package infrastructure
 
 import (
 	"crypto/tls"
-	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -11,13 +9,6 @@ import (
 	"sort"
 	"strings"
 )
-
-// httpContractAsset is the single source of truth for endpoint paths, limits,
-// response codes, outcomes, deadlines, identity and observability names. No
-// production package may hardcode a second copy of any of these values.
-//
-//go:embed assets/plugin-sdk/v1/http-contract.json
-var httpContractAsset []byte
 
 var (
 	ErrInvalidHTTPContract = errors.New("invalid Plugin SDK HTTP contract")
@@ -138,8 +129,8 @@ type ArtifactInvocationContract struct {
 type DocumentContract struct {
 	MediaType       string   `json:"mediaType"`
 	MaximumBytes    int64    `json:"maximumBytes"`
-	Required        []string `json:"required"`
-	DigestAlgorithm string   `json:"digestAlgorithm"`
+	Required        []string `json:"required,omitempty"`
+	DigestAlgorithm string   `json:"digestAlgorithm,omitempty"`
 }
 
 type ResponseContract struct {
@@ -255,7 +246,7 @@ type Endpoint struct {
 
 // Endpoint returns the contract endpoint registered under a stable logical name.
 // Every handler and client route must resolve its path through this accessor so
-// the embedded asset stays the only place a route string exists.
+// the code-owned definition stays the only source of route strings.
 func (contract HTTPContract) Endpoint(name string) (Endpoint, error) {
 	endpoint, ok := contract.Plugin.Endpoints[name]
 	if !ok || endpoint.Method == "" || !strings.HasPrefix(endpoint.Path, "/") {
@@ -284,15 +275,14 @@ func (contract HTTPContract) Problem(key string) (ProblemContract, error) {
 }
 
 // IsSuccessOutcome reports whether an outcome acknowledges success. The
-// vocabulary is closed in the asset, so no caller-supplied string can invent a
+// vocabulary is closed in the definition, so no caller-supplied string can invent a
 // new success classification.
 func (contract HTTPContract) IsSuccessOutcome(outcome string) bool {
 	return contractContains(contract.SuccessOutcomes, outcome)
 }
 
 // StatusForOutcome maps a bounded outcome to the contract problem that owns it.
-// The outcome-to-problem mapping lives in the asset, so a Go constant can never
-// drift away from the published status code.
+// The outcome-to-problem mapping is exported with the other code-owned constants.
 func (contract HTTPContract) StatusForOutcome(outcome string) (ProblemContract, error) {
 	if contract.IsSuccessOutcome(outcome) {
 		return ProblemContract{}, fmt.Errorf("%w: success outcome %q", ErrUnknownOutcome, outcome)
@@ -339,13 +329,9 @@ func (contract HTTPContract) ControlURL(base *url.URL, pathTemplate, segment, se
 	return &target, nil
 }
 
-// LoadHTTPContract parses and validates the embedded versioned contract asset.
+// LoadHTTPContract returns a validated, independently owned versioned definition.
 func LoadHTTPContract() (HTTPContract, error) {
-	var contract HTTPContract
-	decoder := json.NewDecoder(strings.NewReader(string(httpContractAsset)))
-	if err := decoder.Decode(&contract); err != nil {
-		return HTTPContract{}, ErrInvalidHTTPContract
-	}
+	contract := newHTTPContract()
 	if err := contract.validate(); err != nil {
 		return HTTPContract{}, err
 	}

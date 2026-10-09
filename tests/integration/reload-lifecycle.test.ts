@@ -364,7 +364,7 @@ describe("the plugin-owned documents a replica serves", () => {
     expect(JSON.parse(served.text)).toEqual(health.body);
   });
 
-  it("serves the exact bytes Core published, digest included", async () => {
+  it("serves the exact bytes Core published, digest included", () => {
     expect(digestOf(runtime.info.expectedRawJSON)).toBe(runtime.info.digest);
     expect(runtime.info.expectedRawJSON.endsWith("\n")).toBe(true);
   });

@@ -1,0 +1,169 @@
+{
+  "contractVersion": "liapoldus.plugin-sdk.replica-lifecycle.v2",
+  "problemMediaType": "application/json",
+  "transportSecurity": {
+    "tlsRequired": true,
+    "clientCertificateRequired": true,
+    "certificateIdentity": "spiffe-uri-template"
+  },
+  "identity": {
+    "uriTemplate": "spiffe://liapoldus/plugin/{instanceId}/{replicaId}/{incarnationId}",
+    "commonNameUsed": false
+  },
+  "lease": {
+    "ttlSeconds": 30,
+    "renewIntervalSeconds": 10
+  },
+  "deadlines": {
+    "registerSeconds": 5,
+    "renewSeconds": 5,
+    "deregisterSeconds": 5
+  },
+  "limits": {
+    "maximumPeerEndpoints": 4,
+    "maximumContractsPerList": 64
+  },
+  "endpoints": {
+    "deregister": {
+      "method": "POST",
+      "path": "/internal/v2/plugin-replicas/deregister"
+    },
+    "register": {
+      "method": "POST",
+      "path": "/internal/v2/plugin-replicas/register"
+    },
+    "renew": {
+      "method": "POST",
+      "path": "/internal/v2/plugin-replicas/renew"
+    }
+  },
+  "requests": {
+    "deregister": {
+      "mediaType": "application/json",
+      "maximumBytes": 4096,
+      "required": [
+        "contractVersion",
+        "identity"
+      ]
+    },
+    "register": {
+      "mediaType": "application/json",
+      "maximumBytes": 65536,
+      "required": [
+        "contractVersion",
+        "identity",
+        "restEndpoint",
+        "peerEndpoints",
+        "release",
+        "advertisedContracts",
+        "acceptedContracts",
+        "appliedGeneration",
+        "ready"
+      ]
+    },
+    "renew": {
+      "mediaType": "application/json",
+      "maximumBytes": 8192,
+      "required": [
+        "contractVersion",
+        "identity",
+        "appliedGeneration",
+        "ready"
+      ]
+    }
+  },
+  "responses": {
+    "deregister": {
+      "mediaType": "application/json",
+      "maximumBytes": 4096,
+      "required": [
+        "contractVersion",
+        "identity",
+        "deregistered"
+      ],
+      "status": 200
+    },
+    "register": {
+      "mediaType": "application/json",
+      "maximumBytes": 8192,
+      "required": [
+        "contractVersion",
+        "identity",
+        "serverTime",
+        "leaseExpiresAt"
+      ],
+      "status": 201
+    },
+    "renew": {
+      "mediaType": "application/json",
+      "maximumBytes": 8192,
+      "required": [
+        "contractVersion",
+        "identity",
+        "serverTime",
+        "leaseExpiresAt"
+      ],
+      "status": 200
+    }
+  },
+  "leaseExpiry": {
+    "renewalAfterExpiry": "re-register-with-new-incarnation",
+    "oldIncarnationRenewal": "reject",
+    "expiredReplicaEligible": false
+  },
+  "registrationSemantics": {
+    "activeDuplicate": "same-identity-and-immutable-metadata-renews-lease",
+    "changedImmutableMetadata": "reject-with-identity-conflict",
+    "newIncarnation": "replaces-expired-or-deregistered-incarnation",
+    "immutableFields": [
+      "identity",
+      "restEndpoint",
+      "peerEndpoints",
+      "release",
+      "advertisedContracts",
+      "acceptedContracts"
+    ],
+    "renewableFields": [
+      "appliedGeneration",
+      "ready"
+    ],
+    "deregisterUnknown": "reject-with-replica-not-registered",
+    "revokedIncarnationCanRenew": false
+  },
+  "releaseCohortCompatibility": {
+    "sameReleaseDigest": "compatible",
+    "differentRelease": "mutual-acceptance-of-all-advertised-contract-versions",
+    "missingEvidence": "incompatible",
+    "versionRange": "semver-half-open"
+  },
+  "problems": {
+    "identityConflict": {
+      "status": 409,
+      "code": "identity_conflict"
+    },
+    "identityMismatch": {
+      "status": 403,
+      "code": "identity_mismatch"
+    },
+    "invalidRequest": {
+      "status": 400,
+      "code": "invalid_request"
+    },
+    "leaseExpired": {
+      "status": 409,
+      "code": "lease_expired"
+    },
+    "notRegistered": {
+      "status": 404,
+      "code": "replica_not_registered"
+    },
+    "unauthenticated": {
+      "status": 401,
+      "code": "unauthenticated"
+    },
+    "unavailable": {
+      "status": 503,
+      "code": "core_unavailable"
+    }
+  }
+}

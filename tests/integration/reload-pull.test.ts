@@ -21,6 +21,7 @@ import {
 } from "../support/contract";
 import { fixture } from "../support/harness";
 import { Runtime, bodyOf, type Answer } from "../support/runtime";
+import { required } from "../support/value";
 
 const okStatus = 200;
 const applied = "applied";
@@ -44,7 +45,7 @@ let active: { generation: string; sha256: string; schemaVersion: string };
 
 beforeAll(async () => {
   runtime = await Runtime.start();
-  credentials = runtime.info as unknown as CoreCredentials;
+  credentials = runtime.info;
   active = {
     generation: runtime.info.generation,
     sha256: runtime.info.digest,
@@ -388,7 +389,7 @@ describe("the reload request the SDK will accept", () => {
     // is an identifier, so a well-formed descriptor can never reach
     // reloadRequest.maximumBytes. The boundary that is reachable is the
     // identifier bound, and one byte past it must be refused as invalid.
-    const identifierLimit = contract.identity.replica.maximumBytes as number;
+    const identifierLimit = contract.identity.replica.maximumBytes;
     const longest = (fill: number) =>
       reloadAt("g".repeat(fill), active.sha256, active.schemaVersion);
 
@@ -469,7 +470,7 @@ describe("the control plane the SDK pulls from", () => {
   });
 
   it("publishes only the two durable slots for a generation", () => {
-    const state = contract.core.configPull.generationStates as string[];
+    const state = contract.core.configPull.generationStates;
 
     expect([...state].sort()).toEqual(
       [fixture.states.active, fixture.states.previous].sort(),
@@ -650,7 +651,7 @@ describe("the control plane the SDK pulls from", () => {
     // is only meaningful if the fixture Core actually accepted one that large.
     expect(
       publishedAtLimit.status,
-      `the fixture refused a ${document.length}-byte generation: ${publishedAtLimit.text}`,
+      `the fixture refused a ${String(document.length)}-byte generation: ${publishedAtLimit.text}`,
     ).toBe(okStatus);
     const appliedAtLimit = await runtime.reloadViaCore({
       ...active,
@@ -669,7 +670,7 @@ describe("the control plane the SDK pulls from", () => {
 
     expect(pulled.status).toBe(okStatus);
     expect(pulled.text).toBe(document);
-    expect(controlHeader(pulled, responseHeader.sha256)).toBe(digestOf(document));
+    expect(controlHeader(pulled, required(responseHeader.sha256))).toBe(digestOf(document));
     expect(digestOf(pulled.text)).toBe(digestOf(document));
   });
 
@@ -728,14 +729,14 @@ describe("the reload status and code each contract outcome owns", () => {
 
   type Refusal = {
     outcome: string;
-    reach: () => Promise<void>;
+    reach: () => Promise<unknown>;
     reload: () => Promise<Answer>;
   };
 
   const refusals: Refusal[] = [
     {
       outcome: "invalidRequest",
-      reach: async () => undefined,
+      reach: () => Promise.resolve(),
       reload: () =>
         reloadOnTheSurface("", "", undeclaredFieldRequest(active.schemaVersion)),
     },
@@ -806,7 +807,7 @@ describe("the reload status and code each contract outcome owns", () => {
       // The fixture seeds one generation its own applier refuses, and it is the
       // only refusal the plugin-owned applier can produce.
       outcome: "applyRejected",
-      reach: async () => undefined,
+      reach: () => Promise.resolve(),
       reload: () =>
         reloadOnTheSurface(fixture.generations.applyFailure, digestOf(fixture.document.wellFormed)),
     },
@@ -844,7 +845,7 @@ describe("the reload status and code each contract outcome owns", () => {
 
         expect(
           published.status,
-          `the control plane refused a ${oversized.length}-byte generation: ${published.text}`,
+          `the control plane refused a ${String(oversized.length)}-byte generation: ${published.text}`,
         ).toBe(okStatus);
       },
       reload: () => reloadOnTheSurface("generation-oversized", digestOf(documentOfLength(maximumBytes.configPull + 1))),
@@ -887,7 +888,7 @@ describe("the reload status and code each contract outcome owns", () => {
     expect(answer.status).toBe(okStatus);
     expect(answer.mediaType).toContain(mediaType.reloadAcknowledgement);
     expect(Object.keys(acknowledgement).sort()).toEqual(
-      [...(contract.plugin.reloadAcknowledgement.required as string[])].sort(),
+      [...(contract.plugin.reloadAcknowledgement.required)].sort(),
     );
     expect(acknowledgement[fixture.keys.outcome]).toBe(applied);
     expect(acknowledgement[fixture.keys.applied]).toBe(true);
@@ -905,7 +906,7 @@ describe("the reload status and code each contract outcome owns", () => {
     expect(repeated.status).toBe(okStatus);
     expect(repeated.mediaType).toContain(mediaType.reloadAcknowledgement);
     expect(Object.keys(acknowledgement).sort()).toEqual(
-      [...(contract.plugin.reloadAcknowledgement.required as string[])].sort(),
+      [...(contract.plugin.reloadAcknowledgement.required)].sort(),
     );
     expect(acknowledgement[fixture.keys.outcome]).toBe("alreadyActive");
     expect(acknowledgement[fixture.keys.applied]).toBe(true);
@@ -975,11 +976,11 @@ describe("the plugin-owned documents a replica serves", () => {
     for (const line of answer.text.split("\n")) {
       const match = /^([a-z_]+)(\{[^}]*\})? (-?\d+(?:\.\d+)?)$/.exec(line);
       if (match) {
-        series.set(`${match[1]}${match[2] ?? ""}`, Number(match[3]));
+        series.set(`${String(match[1])}${match[2] ?? ""}`, Number(match[3]));
       }
     }
 
-    expect(series.get(metricsContract.readyMetricName as string)).toBe(1);
+    expect(series.get(metricsContract.readyMetricName)).toBe(1);
     const label = (outcome: string) =>
       `${metricsContract.lifecycleCounterName}{${metricsContract.lifecycleCounterKindLabel}="reload",${metricsContract.lifecycleCounterOutcomeLabel}="${outcome}"}`;
     for (const outcome of [
@@ -992,7 +993,7 @@ describe("the plugin-owned documents a replica serves", () => {
     ]) {
       expect(series.get(label(outcome)), `reload ${outcome}`).toBeGreaterThan(0);
     }
-    expect(series.get(metricsContract.pullFailureCounterName as string)).toBeGreaterThan(0);
+    expect(series.get(metricsContract.pullFailureCounterName)).toBeGreaterThan(0);
   });
 
   it("counts a refusal the presentation layer answers before any pull as no pull failure", async () => {
@@ -1002,7 +1003,7 @@ describe("the plugin-owned documents a replica serves", () => {
       mediaType.reloadRequest,
     );
     const after = await runtime.get(path("metrics"));
-    const counter = metricsContract.pullFailureCounterName as string;
+    const counter = metricsContract.pullFailureCounterName;
     const read = (answer: Answer) =>
       new RegExp(`^${counter} (\\d+)$`, "m").exec(answer.text)?.[1];
 

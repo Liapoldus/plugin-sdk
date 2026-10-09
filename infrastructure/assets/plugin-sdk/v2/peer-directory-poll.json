@@ -1,0 +1,84 @@
+{
+  "contractVersion": "liapoldus.plugin-sdk.peer-directory-poll.v1",
+  "problemMediaType": "application/json",
+  "directoryMediaType": "application/json",
+  "transportSecurity": {
+    "tlsRequired": true,
+    "clientCertificateRequired": true,
+    "certificateIdentity": "spiffe-uri-template"
+  },
+  "identityBinding": "authenticated-client-certificate-uri-san",
+  "identity": {
+    "uriTemplate": "spiffe://liapoldus/plugin/{instanceId}/{replicaId}/{incarnationId}",
+    "commonNameUsed": false
+  },
+  "endpoint": {
+    "method": "GET",
+    "path": "/internal/v2/plugin-peer-directory"
+  },
+  "headers": {
+    "request": [
+      "accept:application/json",
+      "if-none-match:strong-generation-tag"
+    ],
+    "response": [
+      "etag:strong-generation-tag",
+      "cache-control:no-store"
+    ]
+  },
+  "poll": {
+    "initialRequest": "immediate-current-directory",
+    "unchanged": "304-not-modified",
+    "changed": "200-directory",
+    "waitParameter": "waitMs",
+    "defaultWaitMs": 20000,
+    "maximumWaitMs": 20000,
+    "requestDeadlineMs": 25000,
+    "etag": "strong-generation-tag",
+    "ifNoneMatch": "exact-current-etag-only",
+    "initialWait": "must-be-zero",
+    "cancellation": "abort-pending-wait",
+    "retry": "caller-controlled-no-automatic-replay"
+  },
+  "requests": {
+    "maximumBytes": 0,
+    "queryParameters": [
+      "waitMs"
+    ],
+    "unknownQueryParameters": "reject"
+  },
+  "responses": {
+    "directory": {
+      "status": 200,
+      "mediaType": "application/json",
+      "maximumBytes": 1048576,
+      "schema": "https://liapoldus.github.io/spec/plugin-sdk/v2/peer-directory.schema.json",
+      "etagMatches": "quoted-directory-generation",
+      "callerMustMatchAuthenticatedIdentity": true
+    },
+    "unchanged": {
+      "status": 304,
+      "maximumBytes": 0,
+      "mediaType": "none",
+      "etag": "same-as-if-none-match"
+    }
+  },
+  "problems": {
+    "identityMismatch": {
+      "status": 403,
+      "code": "identity_mismatch"
+    },
+    "invalidRequest": {
+      "status": 400,
+      "code": "invalid_request"
+    },
+    "unauthenticated": {
+      "status": 401,
+      "code": "unauthenticated"
+    },
+    "unavailable": {
+      "status": 503,
+      "code": "core_unavailable"
+    }
+  }
+}

@@ -28,7 +28,7 @@ func (set *HandlerSet) handleArtifactStream(writer http.ResponseWriter, request 
 		set.writeTransportProblem(writer, notFoundKey)
 		return
 	}
-	defer request.Body.Close()
+	defer closeArtifactPart(request.Body)
 
 	stream := set.contracts.ArtifactStream
 	deadline := time.Now().Add(stream.Deadline)
@@ -72,7 +72,7 @@ func (set *HandlerSet) handleArtifactStream(writer http.ResponseWriter, request 
 	}
 	metadataType, _, mediaErr := mime.ParseMediaType(metadataPart.Header.Get("content-type"))
 	if mediaErr != nil || metadataType != stream.MetadataMediaType {
-		_ = metadataPart.Close()
+		closeArtifactPart(metadataPart)
 		set.writeTransportProblem(writer, unsupportedMediaTypeKey)
 		return
 	}
@@ -98,14 +98,14 @@ func (set *HandlerSet) handleArtifactStream(writer http.ResponseWriter, request 
 	artifactPart, err := reader.NextPart()
 	if err != nil || artifactPart.FormName() != stream.Parts[1] || artifactPart.FileName() != "" {
 		if artifactPart != nil {
-			_ = artifactPart.Close()
+			closeArtifactPart(artifactPart)
 		}
 		set.writeErrorProblem(writer, invalidRequestKey)
 		return
 	}
 	artifactType, _, mediaErr := mime.ParseMediaType(artifactPart.Header.Get("content-type"))
 	if mediaErr != nil || artifactType == "" {
-		_ = artifactPart.Close()
+		closeArtifactPart(artifactPart)
 		set.writeTransportProblem(writer, unsupportedMediaTypeKey)
 		return
 	}
@@ -113,7 +113,7 @@ func (set *HandlerSet) handleArtifactStream(writer http.ResponseWriter, request 
 		part: artifactPart, multipart: reader, counted: counted, contract: stream,
 		metadataBytes: int64(len(metadata)),
 	}
-	result, acceptErr := set.artifacts.AcceptArtifact(request.Context(), ArtifactInput{
+	result, acceptErr := set.artifacts.AcceptArtifact(ctx, ArtifactInput{
 		Invocation: invocation, Metadata: metadata, ContentType: artifactType, Body: validated,
 	})
 	callbackConsumedCompleteBody := validated.verified
@@ -134,6 +134,13 @@ func (set *HandlerSet) handleArtifactStream(writer http.ResponseWriter, request 
 		return
 	}
 	set.writeDocument(writer, set.contracts.ContentTypes.JSON, result.StatusCode, result.Body)
+}
+
+func closeArtifactPart(part io.Closer) {
+	if err := part.Close(); err != nil {
+		// An unreadable/unclean request cannot complete as a successful exchange.
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func artifactInvocationFromHeaders(headers http.Header, contract ArtifactInvocationContract) (models.ArtifactInvocation, error) {

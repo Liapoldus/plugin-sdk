@@ -1,0 +1,313 @@
+{
+  "$defs": {
+    "contractId": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._:/-]+$",
+      "type": "string"
+    },
+    "contractRange": {
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "$ref": "#/$defs/contractId"
+        },
+        "maximumVersionExclusive": {
+          "$ref": "#/$defs/semver"
+        },
+        "minimumVersion": {
+          "$ref": "#/$defs/semver"
+        }
+      },
+      "required": [
+        "contractId",
+        "minimumVersion",
+        "maximumVersionExclusive"
+      ],
+      "type": "object"
+    },
+    "contractVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "contractId": {
+          "$ref": "#/$defs/contractId"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        }
+      },
+      "required": [
+        "contractId",
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "deregisterRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "liapoldus.plugin-sdk.replica-lifecycle.v2"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "identity"
+      ],
+      "type": "object"
+    },
+    "deregisterResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "liapoldus.plugin-sdk.replica-lifecycle.v2"
+        },
+        "deregistered": {
+          "const": true
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "identity",
+        "deregistered"
+      ],
+      "type": "object"
+    },
+    "digest": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "identifier": {
+      "maxLength": 256,
+      "minLength": 1,
+      "not": {
+        "enum": [
+          ".",
+          ".."
+        ]
+      },
+      "pattern": "^[A-Za-z0-9._~-]+$",
+      "type": "string"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "incarnationId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "instanceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "placementId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "replicaId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "instanceId",
+        "replicaId",
+        "incarnationId",
+        "placementId"
+      ],
+      "type": "object"
+    },
+    "peerEndpoint": {
+      "additionalProperties": false,
+      "properties": {
+        "carrier": {
+          "enum": [
+            "tcp",
+            "quic",
+            "unix",
+            "windows-named-pipe"
+          ]
+        },
+        "endpoint": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        },
+        "securityProfile": {
+          "const": "mtls"
+        }
+      },
+      "required": [
+        "carrier",
+        "endpoint",
+        "securityProfile"
+      ],
+      "type": "object"
+    },
+    "registerRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptedContracts": {
+          "items": {
+            "$ref": "#/$defs/contractRange"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "advertisedContracts": {
+          "items": {
+            "$ref": "#/$defs/contractVersion"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "appliedGeneration": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "contractVersion": {
+          "const": "liapoldus.plugin-sdk.replica-lifecycle.v2"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "peerEndpoints": {
+          "items": {
+            "$ref": "#/$defs/peerEndpoint"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "release": {
+          "$ref": "#/$defs/release"
+        },
+        "restEndpoint": {
+          "format": "uri",
+          "pattern": "^https://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "identity",
+        "restEndpoint",
+        "peerEndpoints",
+        "release",
+        "advertisedContracts",
+        "acceptedContracts",
+        "appliedGeneration",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "registerResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "liapoldus.plugin-sdk.replica-lifecycle.v2"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "serverTime": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "identity",
+        "serverTime",
+        "leaseExpiresAt"
+      ],
+      "type": "object"
+    },
+    "release": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        }
+      },
+      "required": [
+        "version",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "renewRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "appliedGeneration": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "contractVersion": {
+          "const": "liapoldus.plugin-sdk.replica-lifecycle.v2"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "ready": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "identity",
+        "appliedGeneration",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "renewResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "liapoldus.plugin-sdk.replica-lifecycle.v2"
+        },
+        "identity": {
+          "$ref": "#/$defs/identity"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "serverTime": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "identity",
+        "serverTime",
+        "leaseExpiresAt"
+      ],
+      "type": "object"
+    },
+    "semver": {
+      "maxLength": 128,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+      "type": "string"
+    }
+  },
+  "$id": "https://liapoldus.github.io/spec/plugin-sdk/v2/replica-lifecycle.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Plugin SDK replica lifecycle v2 DTOs"
+}

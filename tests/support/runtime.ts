@@ -1,4 +1,5 @@
-import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFile, spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
@@ -183,12 +184,12 @@ function announce(name: string, diagnostics: string) {
 export class Runtime {
   readonly info: ReadyLine;
 
-  readonly #child: ChildProcessWithoutNullStreams;
+  readonly #child: ChildProcessByStdio<null, Readable, Readable>;
   readonly #diagnostics: string[];
   #stopped = false;
 
   private constructor(
-    child: ChildProcessWithoutNullStreams,
+    child: ChildProcessByStdio<null, Readable, Readable>,
     info: ReadyLine,
     diagnostics: string[],
   ) {
@@ -202,7 +203,7 @@ export class Runtime {
     const child = spawn(executable, [], {
       cwd: projectRoot,
       stdio: ["ignore", "pipe", "pipe"],
-    }) as ChildProcessWithoutNullStreams;
+    });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     const diagnostics: string[] = [];
@@ -219,25 +220,24 @@ export class Runtime {
         finish();
       };
       const onExit = (code: number | null) => {
-        settle(() => reject(reported(new Error(`it exited with code ${code}`))));
+        settle(() => { reject(reported(new Error(`it exited with code ${String(code)}`))); });
       };
       const timer = setTimeout(() => {
-        settle(() =>
-          reject(
+        settle(() => { reject(
             reported(
               new Error(
-                `it did not announce readiness within ${startupTimeoutMilliseconds}ms`,
+                `it did not announce readiness within ${String(startupTimeoutMilliseconds)}ms`,
               ),
             ),
-          ),
+          ); },
         );
       }, startupTimeoutMilliseconds);
       lines.once("line", (line: string) => {
         try {
           const parsed = JSON.parse(line) as ReadyLine;
-          settle(() => resolve(parsed));
+          settle(() => { resolve(parsed); });
         } catch (error) {
-          settle(() => reject(reported(error)));
+          settle(() => { reject(reported(error)); });
         }
       });
       child.once("exit", onExit);
@@ -263,7 +263,7 @@ export class Runtime {
     }
     this.#stopped = true;
     const exited = new Promise<void>((resolve) => {
-      this.#child.once("exit", () => resolve());
+      this.#child.once("exit", () => { resolve(); });
     });
     this.#child.kill("SIGTERM");
     const forced = setTimeout(() => this.#child.kill("SIGKILL"), stopTimeoutMilliseconds);

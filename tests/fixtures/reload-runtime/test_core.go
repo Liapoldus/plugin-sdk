@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"net/http"
 	"strings"
 	"sync"
@@ -172,7 +173,7 @@ func (core *testCore) servePull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(headers["generationState"], string(stored.state))
 	w.Header().Set("Content-Type", pull.ResponseMediaType)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(stored.rawJSON)
+	process.Write(w, stored.rawJSON)
 }
 
 // serveIssue mints one grant bound to the generation the request names.
@@ -385,5 +386,5 @@ func (core *testCore) write(w http.ResponseWriter, status int, mediaType string,
 	}
 	w.Header().Set("Content-Type", mediaType)
 	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	process.Write(w, body)
 }

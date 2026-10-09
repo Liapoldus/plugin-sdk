@@ -17,6 +17,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 	"net"
 	"net/http"
 	"os"
@@ -75,7 +76,10 @@ type testRotation struct {
 // the file credentials provider, and starts serving. It is deliberately lazy: the
 // surface exists only while a harness is using it, so the rest of the fixture
 // runs with exactly the listeners it always had.
-func (rotation *testRotation) start() (string, error) {
+func (rotation *testRotation) start(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	rotation.mutex.Lock()
 	defer rotation.mutex.Unlock()
 	if rotation.started {
@@ -83,12 +87,12 @@ func (rotation *testRotation) start() (string, error) {
 	}
 	directory, err := os.MkdirTemp("", "plugin-sdk-rotation-")
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	rotation.directory = directory
 	if err := os.Chmod(directory, testRotationDirectory); err != nil {
 		rotation.discard()
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	if err := rotation.writeMaterial(testRotationInitialSerial); err != nil {
 		rotation.discard()
@@ -104,7 +108,7 @@ func (rotation *testRotation) start() (string, error) {
 		})
 	if err != nil {
 		rotation.discard()
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	rotation.provider = provider
 	// The provider is loaded once here so the revocation source is built from the
@@ -113,12 +117,12 @@ func (rotation *testRotation) start() (string, error) {
 	credentials, err := provider.Credentials()
 	if err != nil {
 		rotation.discard()
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	revocation, err := newTestRevocation(credentials, rotation.identities.revocation, testClock{})
 	if err != nil {
 		rotation.discard()
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	server, err := infrastructure.NewMutualTLSServer(rotation.contract, infrastructure.MutualTLSServerConfig{
 		Handler:    http.HandlerFunc(testRotationHandler),
@@ -129,19 +133,19 @@ func (rotation *testRotation) start() (string, error) {
 	})
 	if err != nil {
 		rotation.discard()
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
-	listener, err := net.Listen("tcp", net.JoinHostPort(testRotationListenHost, "0"))
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(testRotationListenHost, "0"))
 	if err != nil {
 		rotation.discard()
-		return "", fmt.Errorf("%w: %v", errTestRotation, err)
+		return "", fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	rotation.server = server
 	rotation.address = "https://" + listener.Addr().String()
 	rotation.started = true
 	rotation.next = testRotationNextSerial
 	go func() {
-		_ = server.Serve(listener)
+		process.Serve(server.Serve(listener))
 	}()
 	return rotation.address, nil
 }
@@ -163,7 +167,7 @@ func (rotation *testRotation) rotate() (providerBefore, providerAfter, servedBef
 	}
 	if err := rotation.server.RefreshCredentials(); err != nil {
 		return providerBefore, providerBefore, servedBefore, servedBefore,
-			fmt.Errorf("%w: %v", errTestRotation, err)
+			fmt.Errorf("%w: %w", errTestRotation, err)
 	}
 	rotation.next++
 	providerAfter = testRotationProviderSerial(rotation.provider)
@@ -175,19 +179,19 @@ func (rotation *testRotation) rotate() (providerBefore, providerAfter, servedBef
 // and removes the directory the material was written to. It reports what it
 // managed to do, so a harness can tell a clean teardown from one that left
 // material or a listening socket behind.
-func (rotation *testRotation) stop() (closed bool, removed bool, err error) {
+func (rotation *testRotation) stop(parent context.Context) (closed bool, removed bool, err error) {
 	rotation.mutex.Lock()
 	defer rotation.mutex.Unlock()
 	if !rotation.started {
 		return rotation.closed, rotation.removed, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), testRotationStopTimeout(rotation.contract))
+	ctx, cancel := context.WithTimeout(parent, testRotationStopTimeout(rotation.contract))
 	defer cancel()
 	if rotation.server != nil {
 		if shutdownErr := rotation.server.GracefulShutdown(ctx); shutdownErr != nil {
 			rotation.closed = false
 			rotation.discardMaterial()
-			return false, rotation.removed, fmt.Errorf("%w: %v", errTestRotation, shutdownErr)
+			return false, rotation.removed, fmt.Errorf("%w: %w", errTestRotation, shutdownErr)
 		}
 		rotation.closed = true
 	}
@@ -225,7 +229,7 @@ func (rotation *testRotation) writeMaterial(serial int64) error {
 	for _, file := range files {
 		if err := os.WriteFile(filepath.Join(rotation.directory, file.name), file.content,
 			testRotationFileMaterial); err != nil {
-			return fmt.Errorf("%w: %v", errTestRotation, err)
+			return fmt.Errorf("%w: %w", errTestRotation, err)
 		}
 	}
 	return nil
@@ -300,5 +304,5 @@ func testRotationSerialText(certificate tls.Certificate) string {
 func testRotationHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", testControlMediaType)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(testControlOperation))
+	process.Write(w, []byte(testControlOperation))
 }

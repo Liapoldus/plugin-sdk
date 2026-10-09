@@ -34,6 +34,7 @@ import (
 	"github.com/Liapoldus/plugin-sdk/domain/models"
 	"github.com/Liapoldus/plugin-sdk/infrastructure"
 	"github.com/Liapoldus/plugin-sdk/presentation"
+	"github.com/Liapoldus/plugin-sdk/tests/support/process"
 )
 
 var errTestControl = errors.New("test control operation refused")
@@ -127,7 +128,7 @@ func (control *testControl) handleArtifactStream(w http.ResponseWriter, r *http.
 		control.fail(w, errTestControl)
 		return
 	}
-	anonymousRejected := control.rejectAnonymousArtifactCall(endpoint)
+	anonymousRejected := control.rejectAnonymousArtifactCall(r.Context(), endpoint)
 	var receipt map[string]any
 	if json.Unmarshal(result.Body, &receipt) != nil {
 		control.fail(w, errTestControl)
@@ -149,26 +150,26 @@ func (control *testControl) handleArtifactStream(w http.ResponseWriter, r *http.
 
 func (control *testControl) handleArtifactProbes(w http.ResponseWriter, r *http.Request) {
 	startCalls := control.artifacts.calls.Load()
-	wrongOrder := control.directArtifact([]testArtifactPart{
+	wrongOrder := control.directArtifact(r.Context(), []testArtifactPart{
 		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
 		{name: "metadata", mediaType: "application/json", body: []byte(`{"mode":"normal"}`)},
 	})
-	withFilename := control.directArtifact([]testArtifactPart{
+	withFilename := control.directArtifact(r.Context(), []testArtifactPart{
 		{name: "metadata", mediaType: "application/json", body: []byte(`{"mode":"normal"}`)},
 		{name: "artifact", filename: "payload.bin", mediaType: "application/gzip", body: []byte("x")},
 	})
-	withExtraPart := control.directArtifact([]testArtifactPart{
+	withExtraPart := control.directArtifact(r.Context(), []testArtifactPart{
 		{name: "metadata", mediaType: "application/json", body: []byte(`{"mode":"normal"}`)},
 		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
 		{name: "extra", mediaType: "application/octet-stream", body: []byte("x")},
 	})
 	oversizedMetadata := []byte(`{"value":"` + strings.Repeat("a", int(control.contract.Plugin.ArtifactStream.MaximumMetadataBytes)-11) + `"}`)
-	metadataOverLimit := control.directArtifact([]testArtifactPart{
+	metadataOverLimit := control.directArtifact(r.Context(), []testArtifactPart{
 		{name: "metadata", mediaType: "application/json", body: oversizedMetadata},
 		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
 	})
 	metadataAtLimit := []byte(`{"value":"` + strings.Repeat("a", int(control.contract.Plugin.ArtifactStream.MaximumMetadataBytes)-12) + `"}`)
-	metadataAtBoundary := control.directArtifact([]testArtifactPart{
+	metadataAtBoundary := control.directArtifact(r.Context(), []testArtifactPart{
 		{name: "metadata", mediaType: "application/json", body: metadataAtLimit},
 		{name: "artifact", mediaType: "application/gzip", body: []byte("x")},
 	})
@@ -247,7 +248,7 @@ type testArtifactPart struct {
 
 type testArtifactResult struct{ Status int }
 
-func (control *testControl) directArtifact(parts []testArtifactPart) testArtifactResult {
+func (control *testControl) directArtifact(ctx context.Context, parts []testArtifactPart) testArtifactResult {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	for _, part := range parts {
@@ -284,7 +285,7 @@ func (control *testControl) directArtifact(parts []testArtifactPart) testArtifac
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
-	request, err := http.NewRequest(http.MethodPost, base.String(), bytes.NewReader(body.Bytes()))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(body.Bytes()))
 	if err != nil {
 		return testArtifactResult{}
 	}
@@ -304,12 +305,14 @@ func (control *testControl) directArtifact(parts []testArtifactPart) testArtifac
 			request.Header.Set(header, value)
 		}
 	}
-	response, err := client.Do(request)
+	response, err := client.Do(request) //nolint:bodyclose // the response body is closed before the probe returns.
 	if err != nil {
 		return testArtifactResult{}
 	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, control.contract.Plugin.ArtifactStream.MaximumReceiptBytes+1))
+	defer process.Close(response.Body)
+	if _, err := io.Copy(io.Discard, io.LimitReader(response.Body, control.contract.Plugin.ArtifactStream.MaximumReceiptBytes+1)); err != nil {
+		panic(err)
+	}
 	return testArtifactResult{Status: response.StatusCode}
 }
 
@@ -380,7 +383,7 @@ func (control *testControl) handleAdminSurface(w http.ResponseWriter, r *http.Re
 	}
 	control.write(w, http.StatusOK, map[string]any{
 		"descriptor": string(document.Bytes), "sha256": document.SHA256,
-		"anonymousRejected": control.rejectAnonymousArtifactCall(endpoint),
+		"anonymousRejected": control.rejectAnonymousArtifactCall(r.Context(), endpoint),
 	})
 }
 
@@ -393,7 +396,7 @@ func (control *testControl) handleAdminAction(w http.ResponseWriter, r *http.Req
 	}
 	input := []byte(`{"filter":{"site":"site-a"}}`)
 	if request.Mode != "normal" {
-		input, _ = json.Marshal(map[string]string{"mode": request.Mode})
+		input = process.Marshal(map[string]string{"mode": request.Mode})
 	}
 	invocation := fixtureAdminInvocation()
 	result, err := control.client.AdminAction(r.Context(), invocation, input)
@@ -426,14 +429,14 @@ func (control *testControl) handleAdminActionProbes(w http.ResponseWriter, r *ht
 	base.Path = strings.Replace(base.Path, "{page}", "overview", 1)
 	base.Path = strings.Replace(base.Path, "{action}", "list", 1)
 	base.RawPath = ""
-	duplicate := control.adminDirect(base.String(), `{"mode":"normal"}`, true, map[string][]string{"Liapoldus-Caller": {"fixture-operator", "second"}})
-	unknown := control.adminDirect(base.String(), `{"mode":"normal"}`, true, map[string][]string{"Liapoldus-Unexpected": {"x"}})
+	duplicate := control.adminDirectContext(r.Context(), base.String(), `{"mode":"normal"}`, true, map[string][]string{"Liapoldus-Caller": {"fixture-operator", "second"}})
+	unknown := control.adminDirectContext(r.Context(), base.String(), `{"mode":"normal"}`, true, map[string][]string{"Liapoldus-Unexpected": {"x"}})
 	callbackCalls := control.adminActions.calls.Load()
 	traversalURL := strings.Replace(control.pluginTLSURL+strings.Replace(endpoint.Path, "{page}", "%2e%2e", 1), "{action}", "list", 1)
-	traversal := control.adminDirect(traversalURL, `{"mode":"normal"}`, true, nil)
-	oversized := control.adminDirect(base.String(), strings.Repeat(" ", int(control.contract.Plugin.AdminAction.MaximumRequestBytes+1)), true, nil)
-	receipt := control.adminDirect(base.String(), `{"mode":"oversized-receipt"}`, true, nil)
-	handlerError := control.adminDirect(base.String(), `{"mode":"handler-error"}`, true, nil)
+	traversal := control.adminDirectContext(r.Context(), traversalURL, `{"mode":"normal"}`, true, nil)
+	oversized := control.adminDirectContext(r.Context(), base.String(), strings.Repeat(" ", int(control.contract.Plugin.AdminAction.MaximumRequestBytes+1)), true, nil)
+	receipt := control.adminDirectContext(r.Context(), base.String(), `{"mode":"oversized-receipt"}`, true, nil)
+	handlerError := control.adminDirectContext(r.Context(), base.String(), `{"mode":"handler-error"}`, true, nil)
 	cancelContext, cancel := context.WithCancel(r.Context())
 	cancelled := make(chan struct{})
 	go func() {
@@ -450,7 +453,7 @@ func (control *testControl) handleAdminActionProbes(w http.ResponseWriter, r *ht
 	control.write(w, http.StatusOK, map[string]any{
 		"duplicateHeaderStatus": duplicate.Status, "unknownHeaderStatus": unknown.Status,
 		"pathTraversalStatus": traversal.Status, "callbackCalls": callbackCalls,
-		"anonymousRejected":       control.rejectAnonymousArtifactCall(endpoint),
+		"anonymousRejected":       control.rejectAnonymousArtifactCall(r.Context(), endpoint),
 		"oversizedRequestRefused": oversized.Status == http.StatusRequestEntityTooLarge,
 		"oversizedReceiptStatus":  receipt.Status, "oversizedReceiptBody": receipt.Body,
 		"handlerErrorStatus": handlerError.Status, "handlerErrorBody": handlerError.Body,
@@ -467,10 +470,6 @@ func fixtureAdminInvocation() models.AdminActionInvocation {
 	return models.AdminActionInvocation{CallerID: "fixture-operator", InstanceID: testInstanceID,
 		PageID: "overview", ActionID: "list", SurfaceDigest: "sha256:fixture-surface", RequestID: "fixture-request",
 		IdempotencyKey: "fixture-idempotency", IfMatch: `"fixture-surface"`}
-}
-
-func (control *testControl) adminDirect(rawURL, body string, authenticate bool, extra map[string][]string) adminProbeResult {
-	return control.adminDirectContext(context.Background(), rawURL, body, authenticate, extra)
 }
 
 func (control *testControl) adminDirectContext(ctx context.Context, rawURL, body string, authenticate bool, extra map[string][]string) adminProbeResult {
@@ -503,16 +502,19 @@ func (control *testControl) adminDirectContext(ctx context.Context, rawURL, body
 			request.Header.Add(name, value)
 		}
 	}
-	response, err := client.Do(request)
+	response, err := client.Do(request) //nolint:bodyclose // the response body is closed before the probe returns.
 	if err != nil {
 		return adminProbeResult{}
 	}
-	defer response.Body.Close()
-	contents, _ := io.ReadAll(io.LimitReader(response.Body, control.contract.Plugin.AdminAction.MaximumResponseBytes+1))
+	defer process.Close(response.Body)
+	contents, err := io.ReadAll(io.LimitReader(response.Body, control.contract.Plugin.AdminAction.MaximumResponseBytes+1))
+	if err != nil {
+		return adminProbeResult{}
+	}
 	return adminProbeResult{Status: response.StatusCode, Body: string(contents)}
 }
 
-func (control *testControl) rejectAnonymousArtifactCall(endpoint infrastructure.Endpoint) bool {
+func (control *testControl) rejectAnonymousArtifactCall(ctx context.Context, endpoint infrastructure.Endpoint) bool {
 	base, err := url.Parse(control.pluginTLSURL)
 	if err != nil {
 		return false
@@ -523,13 +525,13 @@ func (control *testControl) rejectAnonymousArtifactCall(endpoint infrastructure.
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
-	request, err := http.NewRequest(http.MethodPost, base.String(), strings.NewReader(""))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), strings.NewReader(""))
 	if err != nil {
 		return false
 	}
-	response, err := client.Do(request)
+	response, err := client.Do(request) //nolint:bodyclose // the response body is closed before the probe returns.
 	if response != nil {
-		_ = response.Body.Close()
+		process.Close(response.Body)
 	}
 	return err != nil
 }
@@ -802,11 +804,11 @@ func (control *testControl) statusFor(outcome models.Outcome) int {
 func (control *testControl) decode(w http.ResponseWriter, r *http.Request, target any) bool {
 	body, err := readTestDocument(r, testControlMaximumRequestBytes)
 	if err != nil {
-		control.fail(w, fmt.Errorf("%w: %v", errTestControl, err))
+		control.fail(w, fmt.Errorf("%w: %w", errTestControl, err))
 		return false
 	}
 	if err := strictTestUnmarshal(body, target); err != nil {
-		control.fail(w, fmt.Errorf("%w: %v", errTestControl, err))
+		control.fail(w, fmt.Errorf("%w: %w", errTestControl, err))
 		return false
 	}
 	return true
@@ -821,7 +823,7 @@ func (control *testControl) write(w http.ResponseWriter, status int, document an
 	}
 	w.Header().Set("Content-Type", testControlMediaType)
 	w.WriteHeader(status)
-	_, _ = w.Write(body)
+	process.Write(w, body)
 }
 
 // fail reports a harness mistake as a fixture error, never as a contract answer.
@@ -986,12 +988,12 @@ func (control *testControl) handleRotation(w http.ResponseWriter, r *http.Reques
 	}
 	surface, err := control.scenarios.rotationSurface()
 	if err != nil {
-		control.fail(w, fmt.Errorf("%w: %v", errTestControl, err))
+		control.fail(w, fmt.Errorf("%w: %w", errTestControl, err))
 		return
 	}
 	switch request.Operation {
 	case "start":
-		address, startErr := surface.start()
+		address, startErr := surface.start(r.Context())
 		if startErr != nil {
 			control.fail(w, startErr)
 			return
@@ -1014,7 +1016,7 @@ func (control *testControl) handleRotation(w http.ResponseWriter, r *http.Reques
 			"servedSerialAfter":    servedAfter,
 		})
 	case "stop":
-		closed, removed, stopErr := surface.stop()
+		closed, removed, stopErr := surface.stop(r.Context())
 		answer := map[string]any{
 			"operation": request.Operation,
 			"closed":    closed,
@@ -1045,19 +1047,19 @@ func (control *testControl) handleLoad(w http.ResponseWriter, r *http.Request) {
 	}
 	surface, err := control.scenarios.loadSurface()
 	if err != nil {
-		control.fail(w, fmt.Errorf("%w: %v", errTestControl, err))
+		control.fail(w, fmt.Errorf("%w: %w", errTestControl, err))
 		return
 	}
 	switch request.Operation {
 	case "start":
-		address, startErr := surface.start()
+		address, startErr := surface.start(r.Context())
 		if startErr != nil {
 			control.fail(w, startErr)
 			return
 		}
 		control.write(w, http.StatusOK, map[string]any{"operation": request.Operation, "url": address})
 	case "shutdown":
-		report := surface.shutdown()
+		report := surface.shutdown(r.Context())
 		answer := map[string]any{
 			"operation":           request.Operation,
 			"inFlight":            report.inFlight,
@@ -1091,10 +1093,10 @@ func (control *testControl) handleReconnect(w http.ResponseWriter, r *http.Reque
 	}
 	churn, err := control.scenarios.churnScenario()
 	if err != nil {
-		control.fail(w, fmt.Errorf("%w: %v", errTestControl, err))
+		control.fail(w, fmt.Errorf("%w: %w", errTestControl, err))
 		return
 	}
-	report := churn.run()
+	report := churn.run(r.Context())
 	answer := map[string]any{
 		"operation":        "churn",
 		"requested":        report.requested,

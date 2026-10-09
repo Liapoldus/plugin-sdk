@@ -21,7 +21,10 @@ type problemDocument struct {
 func (set *HandlerSet) writeDocument(writer http.ResponseWriter, mediaType string, status int, contents []byte) {
 	writer.Header().Set("content-type", mediaType)
 	writer.WriteHeader(status)
-	_, _ = writer.Write(contents)
+	if _, err := writer.Write(contents); err != nil {
+		// The status is committed. Abort rather than publish a truncated document.
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // writeJSON serialises one value this layer owns and writes it under the
@@ -51,7 +54,10 @@ func (set *HandlerSet) writeTransportProblem(writer http.ResponseWriter, key str
 	}
 	// problemDocument holds two strings, so this cannot fail; the result is used
 	// directly to keep a refusal from recursing through the writer above.
-	contents, _ := json.Marshal(problemDocument{Code: problem.Code})
+	contents, err := json.Marshal(problemDocument{Code: problem.Code})
+	if err != nil {
+		panic(http.ErrAbortHandler)
+	}
 	set.writeDocument(writer, set.contracts.ContentTypes.JSON, problem.Status, contents)
 }
 
@@ -64,7 +70,10 @@ func (set *HandlerSet) writeErrorProblem(writer http.ResponseWriter, key string)
 		set.writeTransportProblem(writer, internalErrorKey)
 		return
 	}
-	contents, _ := json.Marshal(problemDocument{Code: problem.Code})
+	contents, err := json.Marshal(problemDocument{Code: problem.Code})
+	if err != nil {
+		panic(http.ErrAbortHandler)
+	}
 	set.writeDocument(writer, set.contracts.ContentTypes.JSON, problem.Status, contents)
 }
 
@@ -79,9 +88,12 @@ func (set *HandlerSet) writeOutcomeProblem(writer http.ResponseWriter, outcome m
 	if !ok {
 		return
 	}
-	contents, _ := json.Marshal(problemDocument{
+	contents, err := json.Marshal(problemDocument{
 		Outcome: problemForOutcome(outcome),
 		Code:    problem.Code,
 	})
+	if err != nil {
+		panic(http.ErrAbortHandler)
+	}
 	set.writeDocument(writer, set.contracts.ContentTypes.JSON, problem.Status, contents)
 }

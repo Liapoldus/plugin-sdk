@@ -1,3 +1,4 @@
+import { required } from "./support/value";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -38,7 +39,7 @@ describe("Plugin SDK layer structure", () => {
       for (const path of goFiles(resolve(projectRoot, layer))) {
         const source = readFileSync(path, "utf8");
         for (const match of source.matchAll(/"github\.com\/Liapoldus\/plugin-sdk\/([^"]+)"/g)) {
-          expect(allowed[layer]).toContain(`${match[1].split("/")[0]}/`);
+          expect(allowed[layer]).toContain(`${String(required(match[1]).split("/")[0])}/`);
         }
       }
     }
