@@ -1,6 +1,7 @@
 # Liapoldus Plugin SDK
 
-Отдельный четырёхслойный Go-модуль общего REST lifecycle для plugin processes.
+Отдельный четырёхслойный Go-модуль общего Core↔plugin lifecycle для отдельных
+процессов и доверенных statically composed plugins.
 Текущий локальный SDK worktree проходит `make check` (14 файлов / 190 тестов),
 Go build/vet и child-process conformance. На 2026-10-04 Core, Server и forms-db
 также прошли локальные интеграционные gates с SDK; Core→Server→forms-db проверен
@@ -10,7 +11,19 @@ gates перечислены в [TODO.md](https://github.com/Liapoldus/plugin-sd
 
 ## Единственный источник contract
 
-Нормативные константы HTTP v1 и v2 lifecycle/poll/loopback определены типизированным
+Каноническая межрепозиторная модель v3 находится в
+[Core v3 architecture](https://liapoldus.github.io/core/architecture/v3).
+REST и in-process adapters обязаны реализовывать одну lifecycle semantics; ни
+один adapter не получает automatic fallback на другой.
+
+Для trusted Go composition SDK предоставляет `infrastructure.InProcessReplica`.
+Composition root создаёт `NewInProcessConfigurationSourceForInstance`, передаёт
+source и plugin-owned `ConfigurationApplier` в `NewInProcessReplica`, а Core host
+публикует immutable active/previous snapshot через `Publish`. Replica не
+открывает listener, не читает SQLite и использует тот же `Reload`/ACK/readiness
+контракт, что и REST+mTLS client.
+
+Нормативные константы HTTP v2 и v2 lifecycle/poll/loopback определены типизированным
 Go-кодом в `infrastructure/contract_definitions.go`. Production loaders сохраняют
 свои API и возвращают независимые maps/slices без разбора статического JSON.
 Маршруты, методы, media types, статусы, коды, лимиты, deadlines, TLS и outcomes
@@ -200,9 +213,18 @@ key, DSN, grant handle и transport secrets не пишутся. `application.Ou
 
 ## Canonical module path
 
-Canonical import path, утверждённый владельцем: `github.com/Liapoldus/plugin-sdk`.
+Canonical import path, утверждённый владельцем: `github.com/Liapoldus/plugin-sdk/v2`.
 `go.mod`, SDK imports, Core и Server consumer теперь используют этот путь.
 Не выпускать модуль, пока forms-db и общие integration gates не пройдены.
+
+## Release integrity
+
+Каждый `plugin-sdk-v2.*` release публикуется только release workflow после
+`go test ./...`, `go vet ./...` и проверки module path. Workflow создаёт
+детерминированный source artifact, SPDX SBOM, keyless Sigstore bundle для
+artifact и SBOM и GitHub build-provenance attestation. Потребитель проверяет
+checksum и bundle до добавления SDK в lockfile; наличие одного только Git tag
+не является доказательством происхождения.
 
 Нормативная архитектура и migration plan находятся в
 [документации Core](/core/architecture/target).

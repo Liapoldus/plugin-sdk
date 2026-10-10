@@ -9,7 +9,7 @@
     "tlsFailureFallback": false
   },
   "exposedEndpoint": {
-    "httpContractVersion": "liapoldus.plugin-sdk.http.v1",
+    "httpContractVersion": "liapoldus.plugin-sdk.http.v2",
     "endpointKey": "health"
   },
   "notFoundProblemKey": "notFound",

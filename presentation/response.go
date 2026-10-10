@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // problemDocument is the only refusal body this layer writes. The outcome is

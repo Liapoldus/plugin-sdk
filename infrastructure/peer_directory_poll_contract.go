@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 var ErrInvalidPeerDirectoryPollContract = errors.New("invalid Plugin SDK peer-directory poll contract")

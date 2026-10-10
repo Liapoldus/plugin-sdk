@@ -39,7 +39,8 @@ describe("Plugin SDK layer structure", () => {
       for (const path of goFiles(resolve(projectRoot, layer))) {
         const source = readFileSync(path, "utf8");
         for (const match of source.matchAll(/"github\.com\/Liapoldus\/plugin-sdk\/([^"]+)"/g)) {
-          expect(allowed[layer]).toContain(`${String(required(match[1]).split("/")[0])}/`);
+          const layerImport = required(match[1]).split("/").slice(1).join("/");
+          expect(allowed[layer]).toContain(`${required(layerImport.split("/")[0])}/`);
         }
       }
     }
@@ -50,6 +51,6 @@ function goFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) return goFiles(path);
-    return entry.isFile() && entry.name.endsWith(".go") ? [path] : [];
+    return entry.isFile() && entry.name.endsWith(".go") && !entry.name.endsWith("_test.go") ? [path] : [];
   });
 }

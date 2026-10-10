@@ -12,7 +12,7 @@
   product names, payload schema или lifecycle Core.
 
 Библиотеки не зависят друг от друга. Canonical import path Plugin SDK —
-`github.com/Liapoldus/plugin-sdk`; точные REST routes принадлежат SDK, а wire
+`github.com/Liapoldus/plugin-sdk/v2`; точные REST routes принадлежат SDK, а wire
 format и transport profiles — `pluginprotocol`. Общие contracts не копируются
 в plugin repos.
 

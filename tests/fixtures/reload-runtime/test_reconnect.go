@@ -23,15 +23,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/Liapoldus/plugin-sdk/tests/support/process"
+	"github.com/Liapoldus/plugin-sdk/v2/tests/support/process"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
-	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/v2/infrastructure"
 )
 
 // testChurnAttempts is how many connections are abandoned mid-request. It is large

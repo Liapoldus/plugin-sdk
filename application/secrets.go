@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // ErrMissingSecretDependency is returned by NewSecretManager when a required

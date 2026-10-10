@@ -13,7 +13,7 @@ func TestCodeOwnedContractWireParity(t *testing.T) {
 		name, path string
 		value      any
 	}{
-		{"http", "assets/plugin-sdk/v1/http-contract.json", newHTTPContract()},
+		{"http", "assets/plugin-sdk/v2/http-contract.json", newHTTPContract()},
 		{"replica", "assets/plugin-sdk/v2/replica-lifecycle.json", newReplicaLifecycleContract()},
 		{"poll", "assets/plugin-sdk/v2/peer-directory-poll.json", newPeerDirectoryPollContract()},
 		{"loopback", "assets/plugin-sdk/v2/loopback-plaintext-profile.json", newLoopbackPlaintextProfile()},

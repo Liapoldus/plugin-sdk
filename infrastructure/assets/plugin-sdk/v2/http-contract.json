@@ -1,5 +1,5 @@
 {
-  "contractVersion": "liapoldus.plugin-sdk.http.v1",
+  "contractVersion": "liapoldus.plugin-sdk.http.v2",
   "transportSecurity": {
     "minimumTLSVersion": 772,
     "clientCertificateRequired": true,

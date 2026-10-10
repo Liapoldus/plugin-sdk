@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 var (

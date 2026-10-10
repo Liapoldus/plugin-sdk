@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // The plugin-to-Core secret routes are registered in the contract asset under

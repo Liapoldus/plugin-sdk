@@ -3,7 +3,7 @@ package presentation
 import (
 	"errors"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // ErrInvalidContracts is returned when the injected contract cannot produce a

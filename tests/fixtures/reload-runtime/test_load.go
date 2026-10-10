@@ -15,16 +15,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/Liapoldus/plugin-sdk/tests/support/process"
+	"github.com/Liapoldus/plugin-sdk/v2/tests/support/process"
 	"io"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
-	"github.com/Liapoldus/plugin-sdk/domain/models"
-	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/infrastructure"
 )
 
 // testLoadDocument is the fixed document the load surface serves to a request

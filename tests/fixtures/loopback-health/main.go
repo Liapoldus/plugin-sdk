@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Liapoldus/plugin-sdk/tests/support/process"
+	"github.com/Liapoldus/plugin-sdk/v2/tests/support/process"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/v2/infrastructure"
 )
 
 type readyLine struct {

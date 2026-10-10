@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 var ErrInvalidReplicaLifecycleContract = errors.New("invalid Plugin SDK replica lifecycle contract")

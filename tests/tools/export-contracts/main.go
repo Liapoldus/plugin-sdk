@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	sdk "github.com/Liapoldus/plugin-sdk/infrastructure"
+	sdk "github.com/Liapoldus/plugin-sdk/v2/infrastructure"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 	definitions := map[string]any{}
 	h, err := sdk.LoadHTTPContract()
 	must(err)
-	definitions["v1/http-contract.json"] = h
+	definitions["v2/http-contract.json"] = h
 	r, err := sdk.LoadReplicaLifecycleContract()
 	must(err)
 	definitions["v2/replica-lifecycle.json"] = r

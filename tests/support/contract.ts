@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
-import document from "../../infrastructure/assets/plugin-sdk/v1/http-contract.json";
+import document from "../../infrastructure/assets/plugin-sdk/v2/http-contract.json";
 
 export const projectRoot = resolve(import.meta.dirname, "../..");
 
 export const contractFile = resolve(
   projectRoot,
-  "infrastructure/assets/plugin-sdk/v1/http-contract.json",
+  "infrastructure/assets/plugin-sdk/v2/http-contract.json",
 );
 
 export type Endpoint = { method: string; path: string };

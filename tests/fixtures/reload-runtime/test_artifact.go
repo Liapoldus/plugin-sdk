@@ -5,13 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/Liapoldus/plugin-sdk/tests/support/process"
+	"github.com/Liapoldus/plugin-sdk/v2/tests/support/process"
 	"io"
 	"sync"
 	"sync/atomic"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
-	"github.com/Liapoldus/plugin-sdk/presentation"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/presentation"
 )
 
 type testArtifactReceiver struct {

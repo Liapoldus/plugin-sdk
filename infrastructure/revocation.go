@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/interfaces"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/interfaces"
 )
 
 var (

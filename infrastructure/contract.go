@@ -16,7 +16,7 @@ var (
 	ErrContractMismatch    = errors.New("mismatched Plugin SDK contract version")
 )
 
-const expectedContractVersion = "liapoldus.plugin-sdk.http.v1"
+const expectedContractVersion = "liapoldus.plugin-sdk.http.v2"
 
 type HTTPContract struct {
 	ContractVersion   string                     `json:"contractVersion"`

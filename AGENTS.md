@@ -1,7 +1,7 @@
 # Plugin SDK agent instructions
 
 This directory is a standalone Go module for generic Core↔plugin REST lifecycle.
-Its canonical module path is `github.com/Liapoldus/plugin-sdk` (approved by the
+Its canonical module path is `github.com/Liapoldus/plugin-sdk/v2` (approved by the
 owner on 2026-09-30); `go.mod`, SDK imports, Core, Server and forms-db consumers use this
 path. Its
 remote is `https://github.com/Liapoldus/plugin-sdk.git`. Do not publish a
@@ -38,7 +38,7 @@ revision; edit the owner source, never a generated copy in the site aggregator.
 - `Rollback` is a Core Management API operation; do not add a plugin-side
   rollback endpoint. Plugins pull exact generations only after Core invokes
   `Reload`.
-- Versioned HTTP v1 and lifecycle/poll/loopback constants are owned by typed
+- Versioned HTTP v2 and lifecycle/poll/loopback constants are owned by typed
   constructors in `infrastructure/contract_definitions.go`. Loaders return fresh
   maps and slices, never parse static JSON. Change definitions first, then run
   `make contracts`; `make contracts-check` checks deterministic public JSON

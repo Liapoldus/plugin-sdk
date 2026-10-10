@@ -168,7 +168,7 @@ describe("typed definitions own constants and JSON assets publish them", () => {
       .map((entry) => relative(projectRoot, resolve(assetsRoot, entry.parentPath, entry.name)));
 
     expect(assets.sort()).toEqual([
-      "infrastructure/assets/plugin-sdk/v1/http-contract.json",
+      "infrastructure/assets/plugin-sdk/v2/http-contract.json",
       "infrastructure/assets/plugin-sdk/v2/loopback-plaintext-profile.json",
       "infrastructure/assets/plugin-sdk/v2/peer-directory-poll.json",
       "infrastructure/assets/plugin-sdk/v2/peer-directory.schema.json",
@@ -198,6 +198,7 @@ describe("no second lifecycle model exists behind the contract", () => {
       );
 
     expect(declarations).toEqual([
+      "application/in_process_replica.go: func (replica *InProcessReplica) Reload(",
       "application/lifecycle.go: func (lifecycle *Lifecycle) Reload(",
     ]);
   });
@@ -266,7 +267,7 @@ describe("no second lifecycle model exists behind the contract", () => {
 describe("the SDK depends on nothing but its own domain", () => {
   it("imports no Core, pluginprotocol, Caddy or third-party module", () => {
     const module = readFileSync(resolve(projectRoot, "go.mod"), "utf8");
-    const allowed = /^module\s+github\.com\/Liapoldus\/plugin-sdk$/m;
+    const allowed = /^module\s+github\.com\/Liapoldus\/plugin-sdk\/v2$/m;
     const requirements = [...module.matchAll(/^require\s+(.*)$/gm)].flatMap((match) =>
       required(match[1]).trim().split(/\s+/),
     );
@@ -289,7 +290,7 @@ describe("the SDK depends on nothing but its own domain", () => {
         specs.push(required(spec[1]));
       }
       for (const imported of specs) {
-        const internal = imported.startsWith("github.com/Liapoldus/plugin-sdk/");
+        const internal = imported.startsWith("github.com/Liapoldus/plugin-sdk/v2/");
         const foreign = !internal && imported.includes(".");
         if (foreign) {
           offenders.push(`${path} imports ${imported}`);

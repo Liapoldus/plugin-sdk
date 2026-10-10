@@ -16,7 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Liapoldus/plugin-sdk/tests/support/process"
+	"github.com/Liapoldus/plugin-sdk/v2/tests/support/process"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,9 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
-	"github.com/Liapoldus/plugin-sdk/infrastructure"
-	"github.com/Liapoldus/plugin-sdk/presentation"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/v2/presentation"
 )
 
 var (
@@ -353,7 +353,7 @@ func testTransportProblems(contract infrastructure.HTTPContract) (map[string]pre
 	// the path is resolved from the source location rather than from the working
 	// directory the harness happened to start the fixture in.
 	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "..",
-		"infrastructure", "assets", "plugin-sdk", "v1", "http-contract.json")
+		"infrastructure", "assets", "plugin-sdk", "v2", "http-contract.json")
 	contents, err := os.ReadFile(path) //nolint:gosec // path is derived from the fixture source location and a fixed asset suffix.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errTestAsset, err)

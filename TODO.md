@@ -1,4 +1,4 @@
-# TODO — Plugin SDK v1
+# TODO — Plugin SDK v2
 
 ## Повторная проверка — 2026-10-04
 
@@ -45,12 +45,12 @@ release gate; актуальная Linux-проверка 2026-10-04 зафик�
 Этот Go module — общий SDK для создания plugin services и единственный владелец
 Core↔plugin REST lifecycle contracts.
 
-Владелец утвердил canonical module path `github.com/Liapoldus/plugin-sdk`
+Владелец утвердил canonical module path `github.com/Liapoldus/plugin-sdk/v2`
 2026-09-30. `go.mod`, SDK imports, Core, Server и forms-db consumers переведены на него.
 Не выпускать SDK до сквозных gates. Git remote:
 `https://github.com/Liapoldus/plugin-sdk.git`.
 
-Этот документ — reconciled status v1-среза: каждый исходный пункт помечен
+Этот документ — reconciled status v2-среза: каждый исходный пункт помечен
 `[x]` только вместе с исполняемым доказательством, `⚠️` — реализовано, но
 исполняемой проверки нет, `[ ]` — открыто с указанной причиной.
 
@@ -69,7 +69,7 @@ routes.
 поэтому composition живёт в `main` плагина. SDK не импортирует Core,
 `pluginprotocol`, Caddy либо другой plugin: production-код использует только
 четыре слоя и standard library. Общий versioned HTTP contract — только
-`infrastructure/assets/plugin-sdk/v1/http-contract.json`; paths/status/limits/
+`infrastructure/assets/plugin-sdk/v2/http-contract.json`; paths/status/limits/
 schema не копируются hardcode-строками по consumers.
 
 ## Зафиксировано
@@ -285,7 +285,7 @@ schema не копируются hardcode-строками по consumers.
   устанавливает и запускает оператор; SDK не управляет process lifecycle и не
   обращается к container API.
 - [x] Перевести `go.mod`, SDK, Core и Server imports на утверждённый
-  `github.com/Liapoldus/plugin-sdk`; локальные SDK/Core builds проходят.
+  `github.com/Liapoldus/plugin-sdk/v2`; локальные SDK/Core builds проходят.
 - [x] Подключить forms-db к SDK: `go build ./...`, `go vet ./...` и plugin
   TypeScript suite прошли 2026-10-01; child-process SDK REST/mTLS и прямой
   Server→forms-db peer/HTTP маршрут подтверждены тестом с двумя процессами.
@@ -364,15 +364,20 @@ schema не копируются hardcode-строками по consumers.
 
 ## V3 — embedding и in-process adapter
 
-- [ ] Сохранить REST+mTLS adapter для plugin processes и добавить явно
+- [x] Сохранить REST+mTLS adapter для plugin processes и добавить явно
   выбираемый in-process adapter с теми же lifecycle models и observable
-  semantics; не вводить fallback.
-- [ ] Реализовать scoped in-memory `ConfigSource`, доступный только plugin
+  semantics; не вводить fallback. REST child-process suite и
+  `infrastructure/in_process_lifecycle_test.go` подтверждают одинаковые
+  applied/duplicate/stale outcomes.
+- [x] Реализовать scoped in-memory `ConfigSource`, доступный только plugin
   instance, чей immutable host binding его создал; не читать Core SQLite из
-  adapter и не выдавать staging generation.
-- [ ] Обеспечить Reload/pull/apply/ACK, digest/schema validation, grants,
-  cancellation и безопасные errors одинаково через оба adapter-а.
-- [ ] Закрепить, что in-process предназначен только доверенным статически
+  adapter и не выдавать staging generation. Проверки exact active/previous,
+  scope, atomic publish, invalid digest и cancellation находятся в
+  `infrastructure/in_process_config_source_test.go`.
+- [x] Обеспечить Reload/pull/apply/ACK, digest/schema validation, grants,
+  cancellation и безопасные errors одинаково через оба adapter-а; lifecycle
+  conformance покрывает exact digest, duplicate idempotency и stale refusal.
+- [x] Закрепить, что in-process предназначен только доверенным статически
   скомпонованным Go plugins: process isolation и Core↔plugin mTLS отсутствуют,
   независимое обновление требует пересборки host binary.
 - [ ] Общий TypeScript conformance corpus пройти на REST child-process и
@@ -395,5 +400,7 @@ SDK остаётся product-agnostic, не зависит от `pluginprotocol`
 SDK `v1.0.0` и согласованный patch tag `v1.0.1` опубликованы; macOS/Ubuntu
 hosted CI прошли для tag. VitePress pin и GitHub Pages публикация обновлены.
 Core→SDK→Server→forms-db cross-repository integration прошла в hosted CI.
-Linux VM runtime проверен в OrbStack; V2 embedding/in-process adapter не входит
-в v1 readiness.
+Linux VM runtime проверен в OrbStack; in-process adapter теперь имеет native
+Go conformance для source/lifecycle semantics. Production-ready статус всей
+v3 экосистемы всё ещё требует общего REST/in-process corpus, Core host-process
+smoke и hosted release evidence.

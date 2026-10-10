@@ -92,7 +92,7 @@ describe("the opt-in loopback plaintext health profile", () => {
       transport: { remoteBindAllowed: boolean; tlsFailureFallback: boolean };
     };
 
-    expect(contract.contractVersion).toBe("liapoldus.plugin-sdk.http.v1");
+    expect(contract.contractVersion).toBe("liapoldus.plugin-sdk.http.v2");
     expect(contract.transportSecurity.clientCertificateRequired).toBe(true);
     expect(profile.enabledByDefault).toBe(false);
     expect(profile.exposedEndpoint).toEqual({

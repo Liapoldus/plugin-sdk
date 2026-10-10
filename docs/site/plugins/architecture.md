@@ -45,7 +45,8 @@ startup reconciliation. Rollback — Core Management API operation: Core мен�
 `Reload(generation)`; отдельной plugin rollback command нет. Неответившие
 replicas остаются fenced до ACK. См. [state machine Core](../core/architecture/control-plane).
 
-Общий Plugin SDK предоставляет только инфраструктурные REST structures,
+Общий Plugin SDK предоставляет инфраструктурные REST structures и явный
+`infrastructure.InProcessReplica` для trusted Go composition, а также
 metrics/logging/error handling и lifecycle helpers. Он не выбирает plugin
 settings и не содержит их бизнес-валидации. Плагин не получает application
 config через env, argv или локальный application-config file; он загружает
@@ -98,8 +99,8 @@ workloads выполняет оператор. SDK не становится pro
 защищённой связи. Core REST имеет отдельные trust roots и identities.
 
 Health/readiness не становится `Ready`, пока конкретная replica не подтвердила
-актуальное поколение plugin configuration. Peer-policy generations не входят в
-v1. Неизвестный результат plugin Call
+актуальное поколение plugin configuration. Peer-policy generations входят в
+v2 peer-directory contract и сохраняются в v3. Неизвестный результат plugin Call
 не повторяется автоматически; оборванный Stream закрывается. Публичная матрица
 runtime-доказательств — [Core acceptance](../core/configuration/acceptance).
 

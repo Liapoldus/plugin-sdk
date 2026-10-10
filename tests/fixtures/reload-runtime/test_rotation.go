@@ -17,7 +17,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"github.com/Liapoldus/plugin-sdk/tests/support/process"
+	"github.com/Liapoldus/plugin-sdk/v2/tests/support/process"
 	"net"
 	"net/http"
 	"os"
@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/v2/infrastructure"
 )
 
 // testRotation answers the two contract durations a rotation has to respect: how

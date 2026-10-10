@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // Endpoint is one route of the versioned contract: the method Core must use and

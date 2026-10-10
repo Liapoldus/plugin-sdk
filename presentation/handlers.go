@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // handleHealth answers the liveness endpoint with the injected status and the

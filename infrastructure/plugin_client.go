@@ -15,7 +15,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 // The Core-side client reaches the plugin lifecycle surface over the same

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/Liapoldus/plugin-sdk/domain/models"
-	"github.com/Liapoldus/plugin-sdk/infrastructure"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/infrastructure"
 )
 
 type result struct {

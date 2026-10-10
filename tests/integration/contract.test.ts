@@ -32,7 +32,7 @@ describe("the versioned HTTP contract asset", () => {
   it("publishes one contract version and one file for it", () => {
     expect(typeof contract.contractVersion).toBe("string");
     expect(contract.contractVersion.length).toBeGreaterThan(0);
-    expect(contractFile).toMatch(/assets[/\\]plugin-sdk[/\\]v1[/\\]http-contract\.json$/);
+    expect(contractFile).toMatch(/assets[/\\]plugin-sdk[/\\]v2[/\\]http-contract\.json$/);
   });
 
   it("registers every plugin endpoint once, with a unique method and path", () => {

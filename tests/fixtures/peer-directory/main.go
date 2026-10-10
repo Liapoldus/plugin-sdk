@@ -5,8 +5,8 @@ import (
 	"errors"
 	"os"
 
-	"github.com/Liapoldus/plugin-sdk/application"
-	"github.com/Liapoldus/plugin-sdk/domain/models"
+	"github.com/Liapoldus/plugin-sdk/v2/application"
+	"github.com/Liapoldus/plugin-sdk/v2/domain/models"
 )
 
 type request struct {
